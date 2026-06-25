@@ -206,7 +206,13 @@ export default function ScheduleScreen() {
                           </Pressable>
                         );
                       })}
-                      {ids.length === 0 && <Text style={styles.noneText}>—</Text>}
+                      <Pressable
+                        style={styles.addChip}
+                        onPress={() => setSwapTarget({ date, physicianId: null })}
+                        hitSlop={6}
+                      >
+                        <Text style={styles.addChipText}>＋</Text>
+                      </Pressable>
                     </View>
                     {short && (
                       <Pill
@@ -329,7 +335,18 @@ const styles = StyleSheet.create({
   weekendText: { color: theme.colors.warning },
   dayAvatars: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 4, paddingHorizontal: 8 },
   dayAvatar: {},
-  noneText: { color: theme.colors.textSubtle, fontSize: theme.font.body },
+  addChip: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.card,
+  },
+  addChipText: { color: theme.colors.textSubtle, fontSize: 16, fontWeight: '700', marginTop: -2 },
   balRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   balName: { flex: 1, marginLeft: 10, fontSize: theme.font.body, fontWeight: '700', color: theme.colors.text },
   balHours: { fontSize: theme.font.body, fontWeight: '800', color: theme.colors.text },

@@ -8,7 +8,8 @@ import { Avatar, Pill } from './ui';
 
 export interface SwapTarget {
   date: string;
-  physicianId: string;
+  /** The physician being swapped out, or null to ADD someone to the day. */
+  physicianId: string | null;
 }
 
 export default function SwapShiftModal({
@@ -24,8 +25,10 @@ export default function SwapShiftModal({
   if (!target) return null;
 
   const physById = Object.fromEntries(data.physicians.map((p) => [p.id, p]));
-  const from = physById[target.physicianId];
-  if (!from) return null;
+  const from = target.physicianId ? physById[target.physicianId] : null;
+  // In swap mode we need a valid "from" physician; in add mode there is none.
+  if (target.physicianId && !from) return null;
+  const addMode = !target.physicianId;
 
   const dateLabel = `${weekdayName(target.date)} ${fromISO(target.date).toLocaleDateString(undefined, {
     month: 'short',
@@ -63,7 +66,8 @@ export default function SwapShiftModal({
     });
 
   const choose = (toId: string | null) => {
-    reassignShift(schedule.id, target.date, target.physicianId, toId);
+    // In add mode there's no physician to remove (fromId = ''), so it only adds.
+    reassignShift(schedule.id, target.date, target.physicianId ?? '', toId);
     onClose();
   };
 
@@ -74,16 +78,24 @@ export default function SwapShiftModal({
         <View style={styles.sheet}>
           <View style={styles.handle} />
           <View style={styles.headRow}>
-            <Avatar name={from.name} color={from.color} size={34} />
+            {from ? (
+              <Avatar name={from.name} color={from.color} size={34} />
+            ) : (
+              <View style={styles.addIcon}>
+                <Text style={styles.addIconText}>＋</Text>
+              </View>
+            )}
             <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={styles.title}>{from.name}</Text>
+              <Text style={styles.title}>{from ? from.name : `Add to ${dateLabel}`}</Text>
               <Text style={styles.sub}>
-                Can’t work {dateLabel}? Pick who covers it{dateIsWeekend ? ' · weekend' : ''}.
+                {from
+                  ? `Can’t work ${dateLabel}? Pick who covers it${dateIsWeekend ? ' · weekend' : ''}.`
+                  : `Pick a physician to add to this day${dateIsWeekend ? ' · weekend' : ''}.`}
               </Text>
             </View>
           </View>
 
-          <Text style={styles.section}>REASSIGN THIS SHIFT TO</Text>
+          <Text style={styles.section}>{addMode ? 'ADD A PHYSICIAN' : 'REASSIGN THIS SHIFT TO'}</Text>
           <ScrollView style={{ maxHeight: 360 }} contentContainerStyle={{ paddingBottom: 4 }}>
             {candidates.length === 0 ? (
               <Text style={styles.empty}>Everyone else is already working this day.</Text>
@@ -107,14 +119,16 @@ export default function SwapShiftModal({
             )}
           </ScrollView>
 
-          <Pressable style={styles.removeBtn} onPress={() => choose(null)}>
-            <Text style={styles.removeText}>Remove — leave this shift open</Text>
-          </Pressable>
+          {!addMode && (
+            <Pressable style={styles.removeBtn} onPress={() => choose(null)}>
+              <Text style={styles.removeText}>Remove — leave this shift open</Text>
+            </Pressable>
+          )}
           <Pressable style={styles.cancelBtn} onPress={onClose}>
             <Text style={styles.cancelText}>Cancel</Text>
           </Pressable>
           <Text style={styles.note}>
-            Manual swaps stay until you regenerate the schedule.
+            Manual edits stay until you regenerate the schedule.
           </Text>
         </View>
       </View>
@@ -134,6 +148,11 @@ const styles = StyleSheet.create({
   },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: theme.colors.border, alignSelf: 'center', marginBottom: 14 },
   headRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  addIcon: {
+    width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: theme.colors.primarySoft,
+  },
+  addIconText: { color: theme.colors.primary, fontSize: 22, fontWeight: '700', marginTop: -2 },
   title: { fontSize: theme.font.h2, fontWeight: '800', color: theme.colors.text },
   sub: { fontSize: theme.font.small, color: theme.colors.textMuted, marginTop: 2 },
   section: { fontSize: theme.font.tiny, fontWeight: '700', letterSpacing: 0.6, color: theme.colors.textSubtle, marginBottom: 8, marginLeft: 2 },
