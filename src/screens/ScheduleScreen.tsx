@@ -19,6 +19,12 @@ import {
   toISO,
   weekdayName,
 } from '../engine/dates';
+import {
+  emailSchedule,
+  makeSchedulePdf,
+  recipientEmails,
+  shareSchedulePdf,
+} from '../engine/exportSchedule';
 import { generateSchedule, summarizeSchedule } from '../engine/solver';
 import { useStore } from '../store/store';
 import { theme } from '../theme';
@@ -31,6 +37,7 @@ export default function ScheduleScreen() {
   const [month, setMonth] = useState<string>(() => monthStartOf(toISO(new Date())));
   const [view, setView] = useState<ViewMode>('calendar');
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const schedule = useMemo<Schedule | undefined>(
     () => data.schedules.find((s) => s.month === month),
@@ -62,6 +69,47 @@ export default function ScheduleScreen() {
       saveSchedule(result);
       setBusy(false);
     }, 30);
+  };
+
+  const runExport = (mode: 'email' | 'share') => {
+    if (!schedule) return;
+    setExporting(true);
+    (async () => {
+      try {
+        const pdf = await makeSchedulePdf(schedule, data.physicians);
+        if (mode === 'email') {
+          const res = await emailSchedule(pdf, schedule, data.physicians);
+          if (res.status === 'unavailable') {
+            // No Mail account set up — fall back to the share sheet.
+            await shareSchedulePdf(pdf);
+          }
+        } else {
+          await shareSchedulePdf(pdf);
+        }
+      } catch (e: any) {
+        Alert.alert('Export failed', e?.message ?? 'Could not create the PDF.');
+      } finally {
+        setExporting(false);
+      }
+    })();
+  };
+
+  const onExportPress = () => {
+    if (!schedule) return;
+    const haveEmails = recipientEmails(data.physicians).length;
+    Alert.alert(
+      'Share schedule',
+      haveEmails
+        ? `Email a PDF to ${haveEmails} physician${haveEmails === 1 ? '' : 's'} on file, or open the share sheet.`
+        : 'Create a PDF and choose how to send it. Add physician emails (Physicians tab) to pre-fill recipients.',
+      [
+        ...(haveEmails
+          ? [{ text: `Email ${haveEmails} MD${haveEmails === 1 ? '' : 's'}`, onPress: () => runExport('email') }]
+          : []),
+        { text: 'Share PDF…', onPress: () => runExport('share') },
+        { text: 'Cancel', style: 'cancel' as const },
+      ],
+    );
   };
 
   const summary = schedule ? summarizeSchedule(schedule, data.physicians) : [];
@@ -167,11 +215,17 @@ export default function ScheduleScreen() {
           )}
 
           <Button
+            title={exporting ? 'Preparing PDF…' : 'Share / Email PDF'}
+            onPress={onExportPress}
+            loading={exporting}
+            style={{ marginTop: 18 }}
+          />
+          <Button
             title={busy ? 'Regenerating…' : 'Regenerate'}
             variant="secondary"
             onPress={generate}
             loading={busy}
-            style={{ marginTop: 18 }}
+            style={{ marginTop: 10 }}
           />
           <Text style={styles.tinyNote}>
             Created {new Date(schedule.createdAt).toLocaleString()}

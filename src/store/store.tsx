@@ -37,7 +37,7 @@ interface StoreValue {
   data: AppData;
   loaded: boolean;
   // physicians
-  addPhysician: (name: string, fte: number) => void;
+  addPhysician: (name: string, fte: number, email?: string) => void;
   updatePhysician: (id: string, patch: Partial<Physician>) => void;
   removePhysician: (id: string) => void;
   // time off
@@ -92,10 +92,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     );
   }, [data, loaded]);
 
-  const addPhysician = useCallback((name: string, fte: number) => {
+  const addPhysician = useCallback((name: string, fte: number, email?: string) => {
     setData((d) => {
       const color = PHYSICIAN_COLORS[d.physicians.length % PHYSICIAN_COLORS.length];
-      const p: Physician = { id: uid('md'), name: name.trim(), color, fte };
+      const p: Physician = { id: uid('md'), name: name.trim(), color, fte, email: email?.trim() || undefined };
       return { ...d, physicians: [...d.physicians, p] };
     });
   }, []);

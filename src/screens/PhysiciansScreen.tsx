@@ -25,11 +25,13 @@ export default function PhysiciansScreen() {
   const [editing, setEditing] = useState<Physician | null>(null);
   const [name, setName] = useState('');
   const [fte, setFte] = useState(1.0);
+  const [email, setEmail] = useState('');
 
   const openAdd = () => {
     setEditing(null);
     setName('');
     setFte(1.0);
+    setEmail('');
     setModal(true);
   };
 
@@ -37,6 +39,7 @@ export default function PhysiciansScreen() {
     setEditing(p);
     setName(p.name);
     setFte(p.fte);
+    setEmail(p.email ?? '');
     setModal(true);
   };
 
@@ -46,10 +49,11 @@ export default function PhysiciansScreen() {
       Alert.alert('Name required', 'Please enter a physician name.');
       return;
     }
+    const cleanEmail = email.trim() || undefined;
     if (editing) {
-      updatePhysician(editing.id, { name: trimmed, fte });
+      updatePhysician(editing.id, { name: trimmed, fte, email: cleanEmail });
     } else {
-      addPhysician(trimmed, fte);
+      addPhysician(trimmed, fte, cleanEmail);
     }
     setModal(false);
   };
@@ -96,6 +100,7 @@ export default function PhysiciansScreen() {
                     {p.fte === 1 ? 'Full time' : `${p.fte.toFixed(1)} FTE`} ·{' '}
                     {Math.round(data.rules.weeklyTargetHours * p.fte)} h/week target
                   </Text>
+                  {p.email ? <Text style={styles.email}>✉︎ {p.email}</Text> : null}
                 </View>
                 <Pill
                   label={p.fte === 1 ? 'FT' : `${p.fte}×`}
@@ -151,7 +156,21 @@ export default function PhysiciansScreen() {
               ))}
             </View>
 
-            <Button title={editing ? 'Save changes' : 'Add physician'} onPress={save} style={{ marginTop: 18 }} />
+            <Text style={[styles.fieldLabel, { marginTop: 18 }]}>Email (optional)</Text>
+            <TextInput
+              style={styles.input}
+              value={email}
+              onChangeText={setEmail}
+              placeholder="doctor@example.com"
+              placeholderTextColor={theme.colors.textSubtle}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              returnKeyType="done"
+              onSubmitEditing={save}
+            />
+
+            <Button title={editing ? 'Save changes' : 'Add physician'} onPress={save} style={{ marginTop: 6 }} />
             <Button title="Cancel" variant="ghost" onPress={() => setModal(false)} style={{ marginTop: 8 }} />
           </View>
         </KeyboardAvoidingView>
@@ -183,6 +202,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
   name: { fontSize: theme.font.h3, fontWeight: '700', color: theme.colors.text },
   meta: { fontSize: theme.font.small, color: theme.colors.textMuted, marginTop: 2 },
+  email: { fontSize: theme.font.small, color: theme.colors.primary, marginTop: 2 },
   remove: { color: theme.colors.textSubtle, fontSize: 18, fontWeight: '600', paddingHorizontal: 4 },
   hint: { textAlign: 'center', color: theme.colors.textSubtle, fontSize: theme.font.small, marginTop: 12 },
   modalWrap: { flex: 1, justifyContent: 'flex-end' },

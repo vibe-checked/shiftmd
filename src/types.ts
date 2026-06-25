@@ -8,6 +8,8 @@ export interface Physician {
   color: string;
   /** Full-time equivalent. 1.0 = full time. Scales the weekly hour target. */
   fte: number;
+  /** Optional email — used to pre-fill recipients when sharing a schedule. */
+  email?: string;
   /** Secret iCal URL (Google Calendar "Secret address in iCal format"). */
   calendarUrl?: string;
   /** ISO timestamp of the last successful calendar sync. */

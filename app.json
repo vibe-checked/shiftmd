@@ -39,7 +39,9 @@
           "resizeMode": "contain",
           "backgroundColor": "#FFFFFF"
         }
-      ]
+      ],
+      "expo-sharing",
+      "expo-mail-composer"
     ]
   }
 }
