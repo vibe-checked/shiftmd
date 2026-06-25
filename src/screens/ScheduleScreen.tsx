@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import SwapShiftModal, { SwapTarget } from '../components/SwapShiftModal';
 import { Avatar, Button, Card, EmptyState, Pill, SectionLabel } from '../components/ui';
 import {
   addMonths,
@@ -38,6 +39,7 @@ export default function ScheduleScreen() {
   const [view, setView] = useState<ViewMode>('calendar');
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [swapTarget, setSwapTarget] = useState<SwapTarget | null>(null);
 
   const schedule = useMemo<Schedule | undefined>(
     () => data.schedules.find((s) => s.month === month),
@@ -176,6 +178,9 @@ export default function ScheduleScreen() {
 
           {view === 'calendar' ? (
             <View style={{ gap: 8 }}>
+              <Text style={styles.swapHint}>
+                Tap a physician on any day to swap or reassign their shift.
+              </Text>
               {daysInMonth(month).map((date) => {
                 const ids = assignmentsByDate[date] ?? [];
                 const weekend = isWeekend(date);
@@ -192,9 +197,13 @@ export default function ScheduleScreen() {
                         const p = physById[id];
                         if (!p) return null;
                         return (
-                          <View key={id} style={styles.dayAvatar}>
+                          <Pressable
+                            key={id}
+                            style={styles.dayAvatar}
+                            onPress={() => setSwapTarget({ date, physicianId: id })}
+                          >
                             <Avatar name={p.name} color={p.color} size={28} />
-                          </View>
+                          </Pressable>
                         );
                       })}
                       {ids.length === 0 && <Text style={styles.noneText}>—</Text>}
@@ -228,9 +237,13 @@ export default function ScheduleScreen() {
             style={{ marginTop: 10 }}
           />
           <Text style={styles.tinyNote}>
-            Created {new Date(schedule.createdAt).toLocaleString()}
+            {schedule.edited ? 'Hand-edited · ' : ''}Created {new Date(schedule.createdAt).toLocaleString()}
           </Text>
         </ScrollView>
+      )}
+
+      {schedule && (
+        <SwapShiftModal schedule={schedule} target={swapTarget} onClose={() => setSwapTarget(null)} />
       )}
     </SafeAreaView>
   );
@@ -297,6 +310,7 @@ const styles = StyleSheet.create({
   monthLabel: { fontSize: theme.font.h3, fontWeight: '700', color: theme.colors.text },
   scroll: { paddingHorizontal: 16, paddingBottom: 48 },
   tinyNote: { textAlign: 'center', color: theme.colors.textSubtle, fontSize: theme.font.small, marginTop: 12 },
+  swapHint: { fontSize: theme.font.small, color: theme.colors.textSubtle, paddingHorizontal: 4, paddingBottom: 2 },
   summaryCard: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 14 },
   summaryOk: { backgroundColor: theme.colors.successSoft, borderColor: '#A6F4C5' },
   summaryWarn: { backgroundColor: theme.colors.warningSoft, borderColor: '#FEDF89' },

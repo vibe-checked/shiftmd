@@ -200,6 +200,45 @@ function computeStats(
   });
 }
 
+/**
+ * Recompute coverage gaps + per-physician stats from an arbitrary set of
+ * assignments. Used after a manual swap/reassignment so the schedule's derived
+ * data stays consistent with its (hand-edited) assignments.
+ */
+export function recomputeDerived(
+  month: ISODate,
+  physicians: Physician[],
+  rules: Rules,
+  assignments: Assignment[],
+): { stats: PhysicianStat[]; gaps: CoverageGap[] } {
+  const trackers = new Map<string, Tracker>();
+  physicians.forEach((p) =>
+    trackers.set(p.id, { shifts: 0, hours: 0, weekends: new Set(), shiftsByWeek: {}, assigned: new Set() }),
+  );
+  const perDate = new Map<string, number>();
+  for (const a of assignments) {
+    const t = trackers.get(a.physicianId);
+    if (!t) continue;
+    t.shifts += 1;
+    t.hours += rules.hoursPerShift;
+    t.assigned.add(a.date);
+    const wk = weekKey(a.date);
+    t.shiftsByWeek[wk] = (t.shiftsByWeek[wk] ?? 0) + 1;
+    if (isWeekend(a.date)) t.weekends.add(weekendKey(a.date));
+    perDate.set(a.date, (perDate.get(a.date) ?? 0) + 1);
+  }
+
+  const gaps: CoverageGap[] = [];
+  for (const date of daysInMonth(month)) {
+    const needed = isWeekend(date) ? rules.weekendCoverage : rules.weekdayCoverage;
+    const filled = perDate.get(date) ?? 0;
+    if (filled < needed) gaps.push({ date, needed, filled });
+  }
+
+  const stats = computeStats(month, physicians, rules, assignments, trackers);
+  return { stats, gaps };
+}
+
 /** Human-readable summary of how well a schedule met its targets. */
 export function summarizeSchedule(s: Schedule, physicians: Physician[]): string[] {
   const lines: string[] = [];

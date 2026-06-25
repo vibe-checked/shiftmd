@@ -7,6 +7,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
+import { recomputeDerived } from '../engine/solver';
 import {
   AppData,
   CalendarSettings,
@@ -52,6 +53,8 @@ interface StoreValue {
   // schedules
   saveSchedule: (s: Schedule) => void;
   removeSchedule: (id: string) => void;
+  /** Move a single day's shift from one physician to another (or clear it). */
+  reassignShift: (scheduleId: string, date: string, fromId: string, toId: string | null) => void;
   // seed demo
   loadSampleData: () => void;
   resetAll: () => void;
@@ -168,6 +171,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setData((d) => ({ ...d, schedules: d.schedules.filter((s) => s.id !== id) }));
   }, []);
 
+  const reassignShift = useCallback(
+    (scheduleId: string, date: string, fromId: string, toId: string | null) => {
+      setData((d) => {
+        const sch = d.schedules.find((s) => s.id === scheduleId);
+        if (!sch) return d;
+        let assignments = sch.assignments.filter(
+          (a) => !(a.date === date && a.physicianId === fromId),
+        );
+        if (toId && !assignments.some((a) => a.date === date && a.physicianId === toId)) {
+          assignments = [...assignments, { date, physicianId: toId }];
+        }
+        const { stats, gaps } = recomputeDerived(sch.month, d.physicians, sch.rules, assignments);
+        const updated: Schedule = { ...sch, assignments, stats, gaps, edited: true };
+        return { ...d, schedules: d.schedules.map((s) => (s.id === scheduleId ? updated : s)) };
+      });
+    },
+    [],
+  );
+
   const loadSampleData = useCallback(() => {
     const names = [
       'Dr. Adler', 'Dr. Bello', 'Dr. Chen', 'Dr. Davies', 'Dr. Evans',
@@ -204,12 +226,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateRules,
       saveSchedule,
       removeSchedule,
+      reassignShift,
       loadSampleData,
       resetAll,
     }),
     [data, loaded, addPhysician, updatePhysician, removePhysician, addTimeOff,
       removeTimeOff, setPhysicianCalendar, replaceGoogleTimeOff, updateCalendarSettings,
-      updateRules, saveSchedule, removeSchedule, loadSampleData, resetAll],
+      updateRules, saveSchedule, removeSchedule, reassignShift, loadSampleData, resetAll],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

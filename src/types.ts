@@ -97,6 +97,8 @@ export interface Schedule {
   assignments: Assignment[];
   gaps: CoverageGap[];
   stats: PhysicianStat[];
+  /** True once the schedule has been hand-edited (swaps/reassignments). */
+  edited?: boolean;
 }
 
 export interface AppData {
