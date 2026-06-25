@@ -57,7 +57,7 @@ export default function SwapShiftModal({
       const warnings: string[] = [];
       if (isOff(p.id)) warnings.push('On time off');
       if (dateIsWeekend && !worksThisWeekend(p.id) && weekendsWorked(p.id) >= weekendCap) {
-        warnings.push(`At ${weekendCap}-weekend limit`);
+        warnings.push(`Would exceed ${weekendCap}-weekend limit`);
       }
       return { p, warnings };
     });
