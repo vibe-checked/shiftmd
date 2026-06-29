@@ -11,6 +11,8 @@ import { useStore } from '../store/store';
 import { theme } from '../theme';
 import { Shift, shiftDurationMin, WEEK_MIN } from '../types';
 
+const TRACK_H = 470; // px height of a day column track
+
 interface Seg { row: number; left: number; width: number; shift: Shift }
 
 function segmentsFor(shifts: Shift[]): Seg[] {
@@ -167,7 +169,9 @@ export default function ShiftsScreen() {
                     onPress={() => openEdit(seg.shift)}
                     style={[styles.cblock, { top: `${seg.left}%`, height: `${seg.width}%`, backgroundColor: seg.shift.color }]}
                   >
-                    <Text numberOfLines={1} style={styles.cblockRot}>{seg.shift.label} ×{seg.shift.headcount}</Text>
+                    <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.cblockRot, { width: Math.max((seg.width / 100) * TRACK_H - 8, 16) }]}>
+                      {seg.shift.label} ×{seg.shift.headcount}
+                    </Text>
                   </Pressable>
                 ))}
               </Pressable>
@@ -314,17 +318,17 @@ const styles = StyleSheet.create({
   weekGrid: { flexDirection: 'row', backgroundColor: theme.colors.card, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border, paddingVertical: 10, paddingHorizontal: 6 },
   gutter: { width: 50 },
   gutSpacer: { height: 18 },
-  gutTrack: { height: 470, position: 'relative' },
+  gutTrack: { height: TRACK_H, position: 'relative' },
   gutLabel: { position: 'absolute', right: 4, fontSize: 10, fontWeight: '600', color: theme.colors.textMuted, marginTop: -6 },
   gutBottom: { position: 'absolute', bottom: 0, right: 4, fontSize: 10, fontWeight: '600', lineHeight: 12, color: theme.colors.textMuted, textAlign: 'right' },
   dayCol: { flex: 1 },
   colHead: { height: 18, textAlign: 'center', fontSize: theme.font.tiny, fontWeight: '700', color: theme.colors.textMuted },
-  colTrack: { height: 470, marginHorizontal: 1.5, backgroundColor: theme.colors.bg, borderRadius: 5, position: 'relative', overflow: 'hidden' },
+  colTrack: { height: TRACK_H, marginHorizontal: 1.5, backgroundColor: theme.colors.bg, borderRadius: 5, position: 'relative', overflow: 'hidden' },
   htick: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: theme.colors.border },
   cblock: { position: 'absolute', left: 1.5, right: 1.5, borderRadius: 4, overflow: 'hidden', minHeight: 14, alignItems: 'center', justifyContent: 'center' },
-  // Fixed width lets the label lay out at full length before the 90° rotation,
-  // so it isn't truncated against the narrow column width.
-  cblockRot: { color: '#fff', fontSize: 14, fontWeight: '800', width: 200, textAlign: 'center', transform: [{ rotate: '90deg' }] },
+  // Width is set per-block to the block's pixel height so the rotated label
+  // fills tall blocks and ellipsizes ("S…") when a block is too short.
+  cblockRot: { color: '#fff', fontSize: 14, fontWeight: '800', textAlign: 'center', transform: [{ rotate: '90deg' }] },
   emptyBox: { marginTop: 18, paddingHorizontal: 8, alignItems: 'center' },
   emptyHint: { fontSize: theme.font.body, color: theme.colors.textMuted, textAlign: 'center', lineHeight: 21 },
   sectionLabel: { fontSize: theme.font.tiny, fontWeight: '700', letterSpacing: 0.6, color: theme.colors.textSubtle, marginTop: 20, marginBottom: 8, marginLeft: 4 },
