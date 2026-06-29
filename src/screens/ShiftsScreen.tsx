@@ -3,7 +3,7 @@ import {
   Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button, EmptyState } from '../components/ui';
+import { Button } from '../components/ui';
 import {
   clock12, DAY_NAMES, durationLabel, offsetToDayTime, parseHHMM, shiftOffsets,
 } from '../engine/shifttime';
@@ -62,10 +62,18 @@ export default function ShiftsScreen() {
     [data.shifts],
   );
 
-  const openAdd = () => {
+  const openAdd = () => openAddForDay(0);
+
+  // Tap a day column → add the next shift: start at the end of that day's last
+  // shift (or the day start if none), end defaulting to +8h.
+  const openAddForDay = (col: number) => {
     setEditing(null);
     setLabel('');
-    setStartDay(0); setStartT(wsMin); setEndDay(0); setEndT((wsMin + 480) % 1440);
+    const cands = data.shifts.filter((s) => Math.floor(s.startMin / 1440) === col);
+    const startOff = cands.length ? Math.max(...cands.map((s) => s.endMin)) : col * 1440;
+    const a = offsetToDayTime(startOff % WEEK_MIN, wsMin);
+    const b = offsetToDayTime((startOff + 480) % WEEK_MIN, wsMin);
+    setStartDay(a.day); setStartT(a.timeMin); setEndDay(b.day); setEndT(b.timeMin);
     setHeadcount(1);
     setModal(true);
   };
@@ -91,6 +99,14 @@ export default function ShiftsScreen() {
       { text: 'Remove', style: 'destructive', onPress: () => removeShift(s.id) },
     ]);
   };
+  const removeEditing = () => {
+    if (!editing) return;
+    const e = editing;
+    Alert.alert('Remove shift', `Remove "${e.label}" from the weekly template?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => { removeShift(e.id); setModal(false); } },
+    ]);
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -105,44 +121,44 @@ export default function ShiftsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        {data.shifts.length === 0 ? (
-          <>
-            <EmptyState icon="🗂️" title="No shifts yet" subtitle="Define the shifts in a week — each a time range with a headcount. They repeat every week." />
-            <Button title="Load sample week" variant="secondary" onPress={loadSampleData} />
-          </>
-        ) : (
-          <>
-            <Text style={styles.weekHint}>Columns are days from {clock12(wsMin)}. Tap a block to edit.</Text>
-            <View style={styles.weekGrid}>
-              <View style={styles.gutter}>
-                <View style={styles.gutSpacer} />
-                <View style={styles.gutTrack}>
-                  {[0, 0.25, 0.5, 0.75].map((f) => (
-                    <Text key={f} style={[styles.gutLabel, { top: `${f * 100}%` }]}>{clock12((wsMin + f * 1440) % 1440)}</Text>
-                  ))}
-                </View>
-              </View>
-              {DAY_NAMES.map((name, col) => (
-                <View key={name} style={styles.dayCol}>
-                  <Text style={styles.colHead}>{name}</Text>
-                  <View style={styles.colTrack}>
-                    {[0.25, 0.5, 0.75].map((f) => (
-                      <View key={f} style={[styles.htick, { top: `${f * 100}%` }]} />
-                    ))}
-                    {segsByRow[col].map((seg, i) => (
-                      <Pressable
-                        key={seg.shift.id + i}
-                        onPress={() => openEdit(seg.shift)}
-                        style={[styles.cblock, { top: `${seg.left}%`, height: `${seg.width}%`, backgroundColor: seg.shift.color }]}
-                      >
-                        <Text numberOfLines={3} style={styles.cblockText}>{seg.shift.label} ×{seg.shift.headcount}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
+        <Text style={styles.weekHint}>Tap a day to add a shift; tap a block to edit.</Text>
+        <View style={styles.weekGrid}>
+          <View style={styles.gutter}>
+            <View style={styles.gutSpacer} />
+            <View style={styles.gutTrack}>
+              {[0, 0.25, 0.5, 0.75].map((f) => (
+                <Text key={f} style={[styles.gutLabel, { top: `${f * 100}%` }]}>{clock12((wsMin + f * 1440) % 1440)}</Text>
               ))}
             </View>
+          </View>
+          {DAY_NAMES.map((name, col) => (
+            <View key={name} style={styles.dayCol}>
+              <Text style={styles.colHead}>{name}</Text>
+              <Pressable style={styles.colTrack} onPress={() => openAddForDay(col)}>
+                {[0.25, 0.5, 0.75].map((f) => (
+                  <View key={f} style={[styles.htick, { top: `${f * 100}%` }]} />
+                ))}
+                {segsByRow[col].map((seg, i) => (
+                  <Pressable
+                    key={seg.shift.id + i}
+                    onPress={() => openEdit(seg.shift)}
+                    style={[styles.cblock, { top: `${seg.left}%`, height: `${seg.width}%`, backgroundColor: seg.shift.color }]}
+                  >
+                    <Text numberOfLines={3} style={styles.cblockText}>{seg.shift.label} ×{seg.shift.headcount}</Text>
+                  </Pressable>
+                ))}
+              </Pressable>
+            </View>
+          ))}
+        </View>
 
+        {data.shifts.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <Text style={styles.emptyHint}>No shifts yet — tap any day above to add one, or load a sample week to explore.</Text>
+            <Button title="Load sample week" variant="secondary" onPress={loadSampleData} style={{ marginTop: 12 }} />
+          </View>
+        ) : (
+          <>
             <Text style={styles.sectionLabel}>ALL SHIFTS ({data.shifts.length})</Text>
             {[...data.shifts].sort((a, b) => a.startMin - b.startMin).map((s) => (
               <Pressable key={s.id} onPress={() => openEdit(s)} style={styles.listRow}>
@@ -196,6 +212,7 @@ export default function ShiftsScreen() {
             </View>
 
             <Button title={editing ? 'Save shift' : 'Add shift'} onPress={save} style={{ marginTop: 18 }} />
+            {editing && <Button title="Remove shift" variant="danger" onPress={removeEditing} style={{ marginTop: 8 }} />}
             <Button title="Cancel" variant="ghost" onPress={() => setModal(false)} style={{ marginTop: 8 }} />
           </View>
         </View>
@@ -251,6 +268,8 @@ const styles = StyleSheet.create({
   htick: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: theme.colors.border },
   cblock: { position: 'absolute', left: 1.5, right: 1.5, borderRadius: 3, paddingHorizontal: 2, paddingVertical: 1, overflow: 'hidden', minHeight: 12 },
   cblockText: { color: '#fff', fontSize: 8, fontWeight: '700', lineHeight: 10 },
+  emptyBox: { marginTop: 18, paddingHorizontal: 8, alignItems: 'center' },
+  emptyHint: { fontSize: theme.font.body, color: theme.colors.textMuted, textAlign: 'center', lineHeight: 21 },
   sectionLabel: { fontSize: theme.font.tiny, fontWeight: '700', letterSpacing: 0.6, color: theme.colors.textSubtle, marginTop: 20, marginBottom: 8, marginLeft: 4 },
   listRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.card, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border, padding: 12, marginBottom: 8 },
   dot: { width: 12, height: 12, borderRadius: 6, marginRight: 12 },
