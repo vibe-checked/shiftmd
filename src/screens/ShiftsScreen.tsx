@@ -249,7 +249,7 @@ export default function ShiftsScreen() {
               {[2, 3, 4, 5, 6].map((n) => {
                 const on = headcount === n;
                 return (
-                  <Pressable key={n} style={[styles.pill, on && styles.pillOn]} onPress={() => setHeadcount(n)}>
+                  <Pressable key={n} style={[styles.pill, { flex: 1 }, on && styles.pillOn]} onPress={() => setHeadcount(n)}>
                     <Text style={[styles.pillText, on && styles.pillTextOn]}>{n}</Text>
                   </Pressable>
                 );
