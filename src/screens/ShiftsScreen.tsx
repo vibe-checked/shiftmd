@@ -13,7 +13,9 @@ import { Shift, shiftDurationMin, WEEK_MIN } from '../types';
 
 const TRACK_H = 470; // px height of a day column track
 
-interface Seg { row: number; left: number; width: number; shift: Shift }
+// row = weekday column; left/width = vertical position (% of the day track).
+// lane/lanes = horizontal slot so overlapping shifts sit side-by-side.
+interface Seg { row: number; left: number; width: number; shift: Shift; lane: number; lanes: number }
 
 function segmentsFor(shifts: Shift[]): Seg[] {
   const segs: Seg[] = [];
@@ -29,14 +31,46 @@ function segmentsFor(shifts: Shift[]): Seg[] {
         left: ((segStart - dayStart) / 1440) * 100,
         width: Math.max(((segEnd - segStart) / 1440) * 100, 4),
         shift: s,
+        lane: 0,
+        lanes: 1,
       });
     }
   }
   return segs;
 }
 
+// Calendar-style overlap layout: within a day column, give each segment a lane
+// so concurrent shifts render in side-by-side slots. Connected overlap clusters
+// share a lane count (= the cluster's peak concurrency).
+function assignLanes(segs: Seg[]): void {
+  const items = segs
+    .map((s) => ({ s, start: s.left, end: s.left + s.width }))
+    .sort((a, b) => a.start - b.start || b.end - a.end);
+  let cluster: typeof items = [];
+  let clusterEnd = -Infinity;
+  const flush = () => {
+    if (!cluster.length) return;
+    const laneEnds: number[] = [];
+    for (const it of cluster) {
+      let lane = laneEnds.findIndex((e) => e <= it.start + 1e-6);
+      if (lane === -1) { lane = laneEnds.length; laneEnds.push(0); }
+      laneEnds[lane] = it.end;
+      it.s.lane = lane;
+    }
+    for (const it of cluster) it.s.lanes = laneEnds.length;
+    cluster = [];
+    clusterEnd = -Infinity;
+  };
+  for (const it of items) {
+    if (cluster.length && it.start >= clusterEnd - 1e-6) flush();
+    cluster.push(it);
+    clusterEnd = Math.max(clusterEnd, it.end);
+  }
+  flush();
+}
+
 export default function ShiftsScreen() {
-  const { data, addShift, updateShift, removeShift, loadSampleData } = useStore();
+  const { data, addShift, updateShift, removeShift, loadSampleShifts } = useStore();
   const wsMin = parseHHMM(data.rules.weekStartTime);
 
   const [modal, setModal] = useState(false);
@@ -51,6 +85,7 @@ export default function ShiftsScreen() {
   const segsByRow = useMemo(() => {
     const rows: Seg[][] = [[], [], [], [], [], [], []];
     segmentsFor(data.shifts).forEach((seg) => rows[seg.row].push(seg));
+    rows.forEach(assignLanes);
     return rows;
   }, [data.shifts]);
 
@@ -163,17 +198,26 @@ export default function ShiftsScreen() {
                 {[0.25, 0.5, 0.75].map((f) => (
                   <View key={f} style={[styles.htick, { top: `${f * 100}%` }]} />
                 ))}
-                {segsByRow[col].map((seg, i) => (
-                  <Pressable
-                    key={seg.shift.id + i}
-                    onPress={() => openEdit(seg.shift)}
-                    style={[styles.cblock, { top: `${seg.left}%`, height: `${seg.width}%`, backgroundColor: seg.shift.color }]}
-                  >
-                    <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.cblockRot, { width: Math.max((seg.width / 100) * TRACK_H - 8, 16) }]}>
-                      {seg.shift.label} ×{seg.shift.headcount}
-                    </Text>
-                  </Pressable>
-                ))}
+                {segsByRow[col].map((seg, i) => {
+                  const w = 100 / seg.lanes;
+                  const inset = seg.lanes > 1 ? 1 : 0;
+                  const fs = seg.lanes >= 3 ? 9 : seg.lanes === 2 ? 11 : 14;
+                  return (
+                    <Pressable
+                      key={seg.shift.id + i}
+                      onPress={() => openEdit(seg.shift)}
+                      style={[styles.cblock, {
+                        top: `${seg.left}%`, height: `${seg.width}%`,
+                        left: `${seg.lane * w + inset / 2}%`, width: `${w - inset}%`,
+                        backgroundColor: seg.shift.color,
+                      }]}
+                    >
+                      <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.cblockRot, { fontSize: fs, width: Math.max((seg.width / 100) * TRACK_H - 8, 16) }]}>
+                        {seg.shift.label} ×{seg.shift.headcount}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </Pressable>
             </View>
           ))}
@@ -182,7 +226,7 @@ export default function ShiftsScreen() {
         {data.shifts.length === 0 ? (
           <View style={styles.emptyBox}>
             <Text style={styles.emptyHint}>No shifts yet — tap any day above to add one, or load a sample week to explore.</Text>
-            <Button title="Load sample week" variant="secondary" onPress={loadSampleData} style={{ marginTop: 12 }} />
+            <Button title="Load sample week" variant="secondary" onPress={loadSampleShifts} style={{ marginTop: 12 }} />
           </View>
         ) : (
           <>
@@ -325,7 +369,7 @@ const styles = StyleSheet.create({
   colHead: { height: 18, textAlign: 'center', fontSize: theme.font.tiny, fontWeight: '700', color: theme.colors.textMuted },
   colTrack: { height: TRACK_H, marginHorizontal: 1.5, backgroundColor: theme.colors.bg, borderRadius: 5, position: 'relative', overflow: 'hidden' },
   htick: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: theme.colors.border },
-  cblock: { position: 'absolute', left: 1.5, right: 1.5, borderRadius: 4, overflow: 'hidden', minHeight: 14, alignItems: 'center', justifyContent: 'center' },
+  cblock: { position: 'absolute', borderRadius: 4, overflow: 'hidden', minHeight: 14, alignItems: 'center', justifyContent: 'center' },
   // Width is set per-block to the block's pixel height so the rotated label
   // fills tall blocks and ellipsizes ("S…") when a block is too short.
   cblockRot: { color: '#fff', fontSize: 14, fontWeight: '800', textAlign: 'center', transform: [{ rotate: '90deg' }] },

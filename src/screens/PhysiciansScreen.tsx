@@ -9,7 +9,7 @@ import { theme } from '../theme';
 import { Physician } from '../types';
 
 export default function PhysiciansScreen() {
-  const { data, addPhysician, updatePhysician, removePhysician, loadSampleData } = useStore();
+  const { data, addPhysician, updatePhysician, removePhysician, loadSampleRoster } = useStore();
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<Physician | null>(null);
   const [name, setName] = useState('');
@@ -48,7 +48,7 @@ export default function PhysiciansScreen() {
         {data.physicians.length === 0 ? (
           <>
             <EmptyState icon="🩺" title="No physicians yet" subtitle="Add the doctors on your rotation, or load a sample roster of 10 to explore the app." />
-            <Button title="Load sample roster (10)" variant="secondary" onPress={loadSampleData} />
+            <Button title="Load sample roster (10)" variant="secondary" onPress={loadSampleRoster} />
           </>
         ) : (
           data.physicians.map((p) => (

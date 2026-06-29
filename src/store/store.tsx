@@ -57,7 +57,8 @@ interface StoreValue {
   updateRules: (patch: Partial<Rules>) => void;
   saveSchedule: (s: Schedule) => void;
   reassignShift: (scheduleId: string, instanceId: string, fromId: string | '', toId: string | null) => void;
-  loadSampleData: () => void;
+  loadSampleRoster: () => void;
+  loadSampleShifts: () => void;
   resetAll: () => void;
 }
 
@@ -197,20 +198,37 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  const loadSampleData = useCallback(() => {
+  // Populate ONLY the roster (10 physicians); leaves shifts/rules untouched.
+  const loadSampleRoster = useCallback(() => {
     const names = ['Dr. Adler', 'Dr. Bello', 'Dr. Chen', 'Dr. Davies', 'Dr. Vargas', 'Dr. Farooq', 'Dr. Gupta', 'Dr. Haddad', 'Dr. Ibrahim', 'Dr. Jensen'];
-    const physicians: Physician[] = names.map((name, i) => ({ id: uid('md'), name, color: PHYSICIAN_COLORS[i % PHYSICIAN_COLORS.length] }));
-    const ws = 510; // 08:30
-    const shifts: Shift[] = [];
-    for (let d = 0; d < 7; d++) {
-      const day = shiftOffsets(d, 510, d, 990, ws); // 08:30–16:30 (8h)
-      const eve = shiftOffsets(d, 990, d, 1290, ws); // 16:30–21:30 (5h)
-      const night = shiftOffsets(d, 1290, (d + 1) % 7, 510, ws); // 21:30 → next 08:30 (11h)
-      shifts.push({ id: uid('sh'), label: 'Day', ...day, headcount: 2, color: SHIFT_COLORS[0] });
-      shifts.push({ id: uid('sh'), label: 'Evening', ...eve, headcount: 1, color: SHIFT_COLORS[1] });
-      shifts.push({ id: uid('sh'), label: 'Night', ...night, headcount: 1, color: SHIFT_COLORS[2] });
-    }
-    setData((d) => ({ ...d, physicians, shifts, rules: DEFAULT_RULES, timeOff: [], schedules: [] }));
+    setData((d) => ({
+      ...d,
+      physicians: names.map((name, i) => ({ id: uid('md'), name, color: PHYSICIAN_COLORS[i % PHYSICIAN_COLORS.length] })),
+    }));
+  }, []);
+
+  // Populate ONLY the weekly shift template; leaves the roster untouched.
+  // Five shifts every day (each 1 person); the long shifts overlap the short
+  // ones, which the Shifts timeline lays out side-by-side.
+  const loadSampleShifts = useCallback(() => {
+    setData((d) => {
+      const ws = parseHHMM(d.rules.weekStartTime);
+      const defs = [
+        { label: 'A/NSY', st: 510, et: 750, dEnd: 0, c: 0 }, // 08:30–12:30
+        { label: 'P/NSY', st: 750, et: 1050, dEnd: 0, c: 1 }, // 12:30–17:30
+        { label: 'NY/EV', st: 1050, et: 1230, dEnd: 0, c: 2 }, // 17:30–20:30
+        { label: 'NYY1', st: 1230, et: 750, dEnd: 1, c: 3 }, // 20:30 → next 12:30
+        { label: 'NYY2', st: 510, et: 1230, dEnd: 0, c: 4 }, // 08:30–20:30
+      ];
+      const shifts: Shift[] = [];
+      for (let day = 0; day < 7; day++) {
+        for (const def of defs) {
+          const o = shiftOffsets(day, def.st, (day + def.dEnd) % 7, def.et, ws);
+          shifts.push({ id: uid('sh'), label: def.label, ...o, headcount: 1, color: SHIFT_COLORS[def.c % SHIFT_COLORS.length] });
+        }
+      }
+      return { ...d, shifts };
+    });
   }, []);
 
   const resetAll = useCallback(() => setData(EMPTY), []);
@@ -219,11 +237,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     () => ({
       data, loaded, addPhysician, updatePhysician, removePhysician, addShift, updateShift, removeShift,
       addTimeOff, removeTimeOff, setPhysicianCalendar, replaceGoogleTimeOff, updateCalendarSettings,
-      updateRules, saveSchedule, reassignShift, loadSampleData, resetAll,
+      updateRules, saveSchedule, reassignShift, loadSampleRoster, loadSampleShifts, resetAll,
     }),
     [data, loaded, addPhysician, updatePhysician, removePhysician, addShift, updateShift, removeShift,
       addTimeOff, removeTimeOff, setPhysicianCalendar, replaceGoogleTimeOff, updateCalendarSettings,
-      updateRules, saveSchedule, reassignShift, loadSampleData, resetAll],
+      updateRules, saveSchedule, reassignShift, loadSampleRoster, loadSampleShifts, resetAll],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
