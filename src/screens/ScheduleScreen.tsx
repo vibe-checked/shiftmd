@@ -3,7 +3,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import SwapShiftModal, { SwapTarget } from '../components/SwapShiftModal';
 import { Avatar, Button, Card, EmptyState, Pill, SectionLabel } from '../components/ui';
-import { addDays, fromISO } from '../engine/dates';
+import { addDays, fromISO, toISO } from '../engine/dates';
 import { emailSchedule, makeSchedulePdf, recipientEmails, shareSchedulePdf } from '../engine/exportSchedule';
 import { generateSchedule, summarize } from '../engine/solver';
 import { mondayOf } from '../engine/shifttime';
@@ -22,7 +22,7 @@ function fmtRange(iso: ISODate): string {
 
 export default function ScheduleScreen() {
   const { data, saveSchedule } = useStore();
-  const [startMonday, setStartMonday] = useState<ISODate>(() => mondayOf(new Date().toISOString().slice(0, 10)));
+  const [startMonday, setStartMonday] = useState<ISODate>(() => mondayOf(toISO(new Date())));
   const [view, setView] = useState<View2>('calendar');
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);

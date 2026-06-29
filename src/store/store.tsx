@@ -8,7 +8,7 @@ import React, {
   useState,
 } from 'react';
 import { recomputeDerived } from '../engine/solver';
-import { shiftOffsets } from '../engine/shifttime';
+import { parseHHMM, shiftOffsets } from '../engine/shifttime';
 import {
   AppData,
   Assignment,
@@ -22,6 +22,7 @@ import {
   Shift,
   SHIFT_COLORS,
   TimeOff,
+  WEEK_MIN,
 } from '../types';
 
 const STORAGE_KEY = 'shiftmd:data:v2';
@@ -157,7 +158,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateRules = useCallback((patch: Partial<Rules>) => {
-    setData((d) => ({ ...d, rules: { ...d.rules, ...patch } }));
+    setData((d) => {
+      let shifts = d.shifts;
+      // Changing the week-start time must NOT move existing shifts' clock times.
+      // Shifts are stored as offsets from the week start, so re-anchor them.
+      if (patch.weekStartTime && patch.weekStartTime !== d.rules.weekStartTime) {
+        const delta = parseHHMM(patch.weekStartTime) - parseHHMM(d.rules.weekStartTime);
+        shifts = d.shifts.map((s) => {
+          const dur = s.endMin - s.startMin;
+          const start = (((s.startMin - delta) % WEEK_MIN) + WEEK_MIN) % WEEK_MIN;
+          return { ...s, startMin: start, endMin: start + dur };
+        });
+      }
+      return { ...d, rules: { ...d.rules, ...patch }, shifts };
+    });
   }, []);
 
   const saveSchedule = useCallback((s: Schedule) => {
