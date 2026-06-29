@@ -74,11 +74,10 @@ export default function RulesScreen() {
             onChange={(v) => set({ targetHours: v })}
           />
           <View style={styles.derived}>
-            <Text style={styles.derivedText}>
-              ≈ {perWeek} h/week per physician · {weeks} weeks
-              {'   '}
+            <Text numberOfLines={1} style={styles.derivedText}>
+              ≈ {perWeek} h/wk · {weeks} wks  ·{' '}
               <Text style={styles.resetLink} onPress={() => set({ targetHours: DEFAULT_TARGET_PER_MONTH * r.horizonMonths })}>
-                reset
+                reset to {DEFAULT_TARGET_PER_MONTH}h/mo
               </Text>
             </Text>
           </View>
