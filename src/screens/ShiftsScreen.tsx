@@ -93,7 +93,7 @@ export default function ShiftsScreen() {
     const cands = data.shifts.filter((s) => Math.floor(s.startMin / 1440) === col);
     const startOff = cands.length ? Math.max(...cands.map((s) => s.endMin)) : col * 1440;
     const a = offsetToDayTime(startOff % WEEK_MIN, wsMin);
-    const b = offsetToDayTime((startOff + 480) % WEEK_MIN, wsMin);
+    const b = offsetToDayTime((startOff + 720) % WEEK_MIN, wsMin); // default 12h
     setStartDay(a.day); setStartT(a.timeMin); setEndDay(b.day); setEndT(b.timeMin);
     setHeadcount(1);
     setModal(true);
@@ -230,18 +230,22 @@ export default function ShiftsScreen() {
                   </Pressable>
                 );
               })}
-              <TextInput
-                style={styles.optInput}
-                value={durText}
-                onChangeText={onDurChange}
-                onFocus={() => setDurFocused(true)}
-                onBlur={() => setDurFocused(false)}
-                keyboardType="decimal-pad"
-                placeholder="hrs"
-                placeholderTextColor={theme.colors.textSubtle}
-                returnKeyType="done"
-                selectTextOnFocus
-              />
+              <View style={styles.dInput}>
+                <Text style={styles.dPencil}>✎</Text>
+                <TextInput
+                  style={styles.dField}
+                  value={durText}
+                  onChangeText={onDurChange}
+                  onFocus={() => setDurFocused(true)}
+                  onBlur={() => setDurFocused(false)}
+                  keyboardType="decimal-pad"
+                  placeholder="type"
+                  placeholderTextColor={theme.colors.textSubtle}
+                  returnKeyType="done"
+                  selectTextOnFocus
+                />
+                <Text style={styles.dUnit}>hrs</Text>
+              </View>
             </View>
 
             <Text style={[styles.field, { marginTop: 14 }]}>Headcount</Text>
@@ -351,7 +355,10 @@ const styles = StyleSheet.create({
   pillOn: { backgroundColor: theme.colors.primarySoft, borderColor: theme.colors.primary },
   pillText: { fontSize: 14, fontWeight: '700', color: theme.colors.textMuted },
   pillTextOn: { color: theme.colors.primary },
-  optInput: { flex: 1, minWidth: 44, height: 38, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 9, backgroundColor: theme.colors.bg, paddingHorizontal: 8, fontSize: theme.font.h3, fontWeight: '800', color: theme.colors.text, textAlign: 'center' },
+  dInput: { flex: 1, minWidth: 90, height: 38, flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderColor: theme.colors.primary, borderRadius: 9, backgroundColor: theme.colors.card, paddingHorizontal: 8, gap: 5 },
+  dPencil: { fontSize: 13, color: theme.colors.primary },
+  dField: { flex: 1, fontSize: theme.font.h3, fontWeight: '800', color: theme.colors.text, padding: 0 },
+  dUnit: { fontSize: theme.font.small, fontWeight: '600', color: theme.colors.textMuted },
   hcStep: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: theme.colors.border, borderRadius: 9, backgroundColor: theme.colors.bg },
   hcBtnSm: { width: 30, height: 38, alignItems: 'center', justifyContent: 'center' },
   hcBtnText: { fontSize: 21, fontWeight: '700', color: theme.colors.primary },
