@@ -303,7 +303,9 @@ const styles = StyleSheet.create({
   colTrack: { height: 470, marginHorizontal: 1.5, backgroundColor: theme.colors.bg, borderRadius: 5, position: 'relative', overflow: 'hidden' },
   htick: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: theme.colors.border },
   cblock: { position: 'absolute', left: 1.5, right: 1.5, borderRadius: 4, overflow: 'hidden', minHeight: 14, alignItems: 'center', justifyContent: 'center' },
-  cblockRot: { color: '#fff', fontSize: 12, fontWeight: '800', transform: [{ rotate: '90deg' }] },
+  // Fixed width lets the label lay out at full length before the 90° rotation,
+  // so it isn't truncated against the narrow column width.
+  cblockRot: { color: '#fff', fontSize: 14, fontWeight: '800', width: 200, textAlign: 'center', transform: [{ rotate: '90deg' }] },
   emptyBox: { marginTop: 18, paddingHorizontal: 8, alignItems: 'center' },
   emptyHint: { fontSize: theme.font.body, color: theme.colors.textMuted, textAlign: 'center', lineHeight: 21 },
   sectionLabel: { fontSize: theme.font.tiny, fontWeight: '700', letterSpacing: 0.6, color: theme.colors.textSubtle, marginTop: 20, marginBottom: 8, marginLeft: 4 },
