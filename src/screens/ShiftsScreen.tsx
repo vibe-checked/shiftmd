@@ -144,7 +144,7 @@ export default function ShiftsScreen() {
                     onPress={() => openEdit(seg.shift)}
                     style={[styles.cblock, { top: `${seg.left}%`, height: `${seg.width}%`, backgroundColor: seg.shift.color }]}
                   >
-                    <Text numberOfLines={3} style={styles.cblockText}>{seg.shift.label} ×{seg.shift.headcount}</Text>
+                    <Text numberOfLines={2} style={styles.cblockText}>{seg.shift.label} ×{seg.shift.headcount}</Text>
                   </Pressable>
                 ))}
               </Pressable>
@@ -266,8 +266,8 @@ const styles = StyleSheet.create({
   colHead: { height: 18, textAlign: 'center', fontSize: theme.font.tiny, fontWeight: '700', color: theme.colors.textMuted },
   colTrack: { height: 470, marginHorizontal: 1.5, backgroundColor: theme.colors.bg, borderRadius: 5, position: 'relative', overflow: 'hidden' },
   htick: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: theme.colors.border },
-  cblock: { position: 'absolute', left: 1.5, right: 1.5, borderRadius: 3, paddingHorizontal: 2, paddingVertical: 1, overflow: 'hidden', minHeight: 12 },
-  cblockText: { color: '#fff', fontSize: 8, fontWeight: '700', lineHeight: 10 },
+  cblock: { position: 'absolute', left: 1.5, right: 1.5, borderRadius: 4, paddingHorizontal: 3, paddingVertical: 2, overflow: 'hidden', minHeight: 14 },
+  cblockText: { color: '#fff', fontSize: 12, fontWeight: '800', lineHeight: 14 },
   emptyBox: { marginTop: 18, paddingHorizontal: 8, alignItems: 'center' },
   emptyHint: { fontSize: theme.font.body, color: theme.colors.textMuted, textAlign: 'center', lineHeight: 21 },
   sectionLabel: { fontSize: theme.font.tiny, fontWeight: '700', letterSpacing: 0.6, color: theme.colors.textSubtle, marginTop: 20, marginBottom: 8, marginLeft: 4 },
