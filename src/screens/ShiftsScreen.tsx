@@ -112,24 +112,30 @@ export default function ShiftsScreen() {
           </>
         ) : (
           <>
-            <Text style={styles.weekHint}>Each row is a day from {clock12(wsMin)}. Tap a block to edit.</Text>
-            <View style={styles.timeline}>
-              {DAY_NAMES.map((name, row) => (
-                <View key={name} style={styles.dayRow}>
-                  <Text style={styles.dayLabel}>{name}</Text>
-                  <View style={styles.track}>
+            <Text style={styles.weekHint}>Columns are days from {clock12(wsMin)}. Tap a block to edit.</Text>
+            <View style={styles.weekGrid}>
+              <View style={styles.gutter}>
+                <View style={styles.gutSpacer} />
+                <View style={styles.gutTrack}>
+                  {[0, 0.25, 0.5, 0.75].map((f) => (
+                    <Text key={f} style={[styles.gutLabel, { top: `${f * 100}%` }]}>{clock12((wsMin + f * 1440) % 1440)}</Text>
+                  ))}
+                </View>
+              </View>
+              {DAY_NAMES.map((name, col) => (
+                <View key={name} style={styles.dayCol}>
+                  <Text style={styles.colHead}>{name}</Text>
+                  <View style={styles.colTrack}>
                     {[0.25, 0.5, 0.75].map((f) => (
-                      <View key={f} style={[styles.tick, { left: `${f * 100}%` }]} />
+                      <View key={f} style={[styles.htick, { top: `${f * 100}%` }]} />
                     ))}
-                    {segsByRow[row].map((seg, i) => (
+                    {segsByRow[col].map((seg, i) => (
                       <Pressable
                         key={seg.shift.id + i}
                         onPress={() => openEdit(seg.shift)}
-                        style={[styles.block, { left: `${seg.left}%`, width: `${seg.width}%`, backgroundColor: seg.shift.color }]}
+                        style={[styles.cblock, { top: `${seg.left}%`, height: `${seg.width}%`, backgroundColor: seg.shift.color }]}
                       >
-                        <Text numberOfLines={1} style={styles.blockText}>
-                          {seg.shift.label} ×{seg.shift.headcount}
-                        </Text>
+                        <Text numberOfLines={3} style={styles.cblockText}>{seg.shift.label} ×{seg.shift.headcount}</Text>
                       </Pressable>
                     ))}
                   </View>
@@ -234,13 +240,17 @@ const styles = StyleSheet.create({
   addBtnText: { color: '#fff', fontWeight: '700', fontSize: theme.font.body },
   scroll: { paddingHorizontal: 16, paddingBottom: 48 },
   weekHint: { fontSize: theme.font.small, color: theme.colors.textSubtle, marginBottom: 10, marginLeft: 2 },
-  timeline: { backgroundColor: theme.colors.card, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border, padding: 10, gap: 6 },
-  dayRow: { flexDirection: 'row', alignItems: 'center' },
-  dayLabel: { width: 34, fontSize: theme.font.tiny, fontWeight: '700', color: theme.colors.textMuted },
-  track: { flex: 1, height: 30, backgroundColor: theme.colors.bg, borderRadius: 6, overflow: 'hidden' },
-  tick: { position: 'absolute', top: 0, bottom: 0, width: 1, backgroundColor: theme.colors.border },
-  block: { position: 'absolute', top: 3, bottom: 3, borderRadius: 4, paddingHorizontal: 4, justifyContent: 'center', minWidth: 14 },
-  blockText: { color: '#fff', fontSize: 9, fontWeight: '700' },
+  weekGrid: { flexDirection: 'row', backgroundColor: theme.colors.card, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border, paddingVertical: 10, paddingHorizontal: 6 },
+  gutter: { width: 32 },
+  gutSpacer: { height: 18 },
+  gutTrack: { height: 470, position: 'relative' },
+  gutLabel: { position: 'absolute', right: 2, fontSize: 8, color: theme.colors.textSubtle, marginTop: -4 },
+  dayCol: { flex: 1 },
+  colHead: { height: 18, textAlign: 'center', fontSize: theme.font.tiny, fontWeight: '700', color: theme.colors.textMuted },
+  colTrack: { height: 470, marginHorizontal: 1.5, backgroundColor: theme.colors.bg, borderRadius: 5, position: 'relative', overflow: 'hidden' },
+  htick: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: theme.colors.border },
+  cblock: { position: 'absolute', left: 1.5, right: 1.5, borderRadius: 3, paddingHorizontal: 2, paddingVertical: 1, overflow: 'hidden', minHeight: 12 },
+  cblockText: { color: '#fff', fontSize: 8, fontWeight: '700', lineHeight: 10 },
   sectionLabel: { fontSize: theme.font.tiny, fontWeight: '700', letterSpacing: 0.6, color: theme.colors.textSubtle, marginTop: 20, marginBottom: 8, marginLeft: 4 },
   listRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.card, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border, padding: 12, marginBottom: 8 },
   dot: { width: 12, height: 12, borderRadius: 6, marginRight: 12 },
