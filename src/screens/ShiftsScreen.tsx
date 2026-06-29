@@ -126,7 +126,7 @@ export default function ShiftsScreen() {
           <View style={styles.gutter}>
             <View style={styles.gutSpacer} />
             <View style={styles.gutTrack}>
-              {[0, 0.25, 0.5, 0.75].map((f) => (
+              {[0, 0.25, 0.5, 0.75, 1].map((f) => (
                 <Text key={f} style={[styles.gutLabel, { top: `${f * 100}%` }]}>{clock12((wsMin + f * 1440) % 1440)}</Text>
               ))}
             </View>
@@ -138,19 +138,27 @@ export default function ShiftsScreen() {
                 {[0.25, 0.5, 0.75].map((f) => (
                   <View key={f} style={[styles.htick, { top: `${f * 100}%` }]} />
                 ))}
-                {segsByRow[col].map((seg, i) => (
-                  <Pressable
-                    key={seg.shift.id + i}
-                    onPress={() => openEdit(seg.shift)}
-                    style={[styles.cblock, { top: `${seg.left}%`, height: `${seg.width}%`, backgroundColor: seg.shift.color }]}
-                  >
-                    <Text numberOfLines={2} style={styles.cblockText}>{seg.shift.label} ×{seg.shift.headcount}</Text>
-                  </Pressable>
-                ))}
+                {segsByRow[col].map((seg, i) => {
+                  const chars = `${seg.shift.label}×${seg.shift.headcount}`.replace(/\s+/g, '').split('');
+                  return (
+                    <Pressable
+                      key={seg.shift.id + i}
+                      onPress={() => openEdit(seg.shift)}
+                      style={[styles.cblock, { top: `${seg.left}%`, height: `${seg.width}%`, backgroundColor: seg.shift.color }]}
+                    >
+                      {chars.map((ch, j) => (
+                        <Text key={j} style={styles.cblockChar}>{ch}</Text>
+                      ))}
+                    </Pressable>
+                  );
+                })}
               </Pressable>
             </View>
           ))}
         </View>
+        <Text style={styles.wrapNote}>
+          Each column runs to {clock12(wsMin)} the next morning — e.g. Mon ends Tue {clock12(wsMin)}.
+        </Text>
 
         {data.shifts.length === 0 ? (
           <View style={styles.emptyBox}>
@@ -262,12 +270,13 @@ const styles = StyleSheet.create({
   gutSpacer: { height: 18 },
   gutTrack: { height: 470, position: 'relative' },
   gutLabel: { position: 'absolute', right: 2, fontSize: 8, color: theme.colors.textSubtle, marginTop: -4 },
+  wrapNote: { fontSize: theme.font.tiny, color: theme.colors.textSubtle, textAlign: 'center', marginTop: 6, paddingHorizontal: 8, lineHeight: 14 },
   dayCol: { flex: 1 },
   colHead: { height: 18, textAlign: 'center', fontSize: theme.font.tiny, fontWeight: '700', color: theme.colors.textMuted },
   colTrack: { height: 470, marginHorizontal: 1.5, backgroundColor: theme.colors.bg, borderRadius: 5, position: 'relative', overflow: 'hidden' },
   htick: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: theme.colors.border },
-  cblock: { position: 'absolute', left: 1.5, right: 1.5, borderRadius: 4, paddingHorizontal: 3, paddingVertical: 2, overflow: 'hidden', minHeight: 14 },
-  cblockText: { color: '#fff', fontSize: 12, fontWeight: '800', lineHeight: 14 },
+  cblock: { position: 'absolute', left: 1.5, right: 1.5, borderRadius: 4, paddingHorizontal: 2, paddingVertical: 3, overflow: 'hidden', minHeight: 14, alignItems: 'center' },
+  cblockChar: { color: '#fff', fontSize: 13, fontWeight: '800', lineHeight: 15, textAlign: 'center' },
   emptyBox: { marginTop: 18, paddingHorizontal: 8, alignItems: 'center' },
   emptyHint: { fontSize: theme.font.body, color: theme.colors.textMuted, textAlign: 'center', lineHeight: 21 },
   sectionLabel: { fontSize: theme.font.tiny, fontWeight: '700', letterSpacing: 0.6, color: theme.colors.textSubtle, marginTop: 20, marginBottom: 8, marginLeft: 4 },
