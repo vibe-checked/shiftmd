@@ -213,7 +213,7 @@ export default function ShiftsScreen() {
                       }]}
                     >
                       <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.cblockRot, { fontSize: fs, width: Math.max((seg.width / 100) * TRACK_H - 8, 16) }]}>
-                        {seg.shift.label} ×{seg.shift.headcount}
+                        {seg.shift.label}{seg.shift.headcount > 1 ? ` ×${seg.shift.headcount}` : ''}
                       </Text>
                     </Pressable>
                   );
