@@ -231,7 +231,7 @@ export default function ShiftsScreen() {
                 );
               })}
               <View style={styles.dInput}>
-                <Text style={styles.dPencil}>✎</Text>
+                <Text style={styles.dPencil}>✏️</Text>
                 <TextInput
                   style={styles.dField}
                   value={durText}
@@ -356,7 +356,7 @@ const styles = StyleSheet.create({
   pillText: { fontSize: 14, fontWeight: '700', color: theme.colors.textMuted },
   pillTextOn: { color: theme.colors.primary },
   dInput: { flex: 1, minWidth: 90, height: 38, flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderColor: theme.colors.primary, borderRadius: 9, backgroundColor: theme.colors.card, paddingHorizontal: 8, gap: 5 },
-  dPencil: { fontSize: 13, color: theme.colors.primary },
+  dPencil: { fontSize: 14 },
   dField: { flex: 1, fontSize: theme.font.h3, fontWeight: '800', color: theme.colors.text, padding: 0 },
   dUnit: { fontSize: theme.font.small, fontWeight: '600', color: theme.colors.textMuted },
   hcStep: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: theme.colors.border, borderRadius: 9, backgroundColor: theme.colors.bg },
