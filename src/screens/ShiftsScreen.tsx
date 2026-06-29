@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
@@ -57,13 +57,25 @@ export default function ShiftsScreen() {
     return { ...o, dur: o.endMin - o.startMin };
   }, [startDay, startT, endDay, endT, wsMin]);
 
-  // Editing the duration moves the END (start stays put).
+  // Typing a duration (in hours) moves the END (start stays put).
+  const [durText, setDurText] = useState('');
+  const [durFocused, setDurFocused] = useState(false);
+  // Keep the field in sync with the live duration unless the user is typing it.
+  useEffect(() => {
+    if (!durFocused) setDurText(String(preview.dur / 60));
+  }, [preview.dur, durFocused]);
+
   const setDuration = (newDur: number) => {
     const d = Math.max(30, Math.min(WEEK_MIN, newDur));
     const startOff = offsetFromWeekStart(startDay, startT, wsMin);
     const b = offsetToDayTime((startOff + d) % WEEK_MIN, wsMin);
     setEndDay(b.day);
     setEndT(b.timeMin);
+  };
+  const onDurChange = (t: string) => {
+    setDurText(t);
+    const h = parseFloat(t);
+    if (isFinite(h) && h > 0) setDuration(Math.round((h * 60) / 30) * 30);
   };
 
   const totalWeeklyHours = useMemo(
@@ -214,13 +226,23 @@ export default function ShiftsScreen() {
             <DayRow value={endDay} onChange={setEndDay} />
             <TimeStepper value={endT} onChange={setEndT} />
 
-            <Text style={[styles.field, { marginTop: 14 }]}>Duration</Text>
-            <View style={styles.timeStep}>
-              <Pressable style={styles.timeBtn} onPress={() => setDuration(preview.dur - 30)}><Text style={styles.timeBtnText}>−30m</Text></Pressable>
-              <Text style={styles.timeVal}>{durationLabel(preview.dur)}</Text>
-              <Pressable style={styles.timeBtn} onPress={() => setDuration(preview.dur + 30)}><Text style={styles.timeBtnText}>+30m</Text></Pressable>
+            <Text style={[styles.field, { marginTop: 14 }]}>Duration (hours)</Text>
+            <View style={styles.durRow}>
+              <TextInput
+                style={styles.durInput}
+                value={durText}
+                onChangeText={onDurChange}
+                onFocus={() => setDurFocused(true)}
+                onBlur={() => setDurFocused(false)}
+                keyboardType="decimal-pad"
+                placeholder="8"
+                placeholderTextColor={theme.colors.textSubtle}
+                returnKeyType="done"
+                selectTextOnFocus
+              />
+              <Text style={styles.durUnit}>= {durationLabel(preview.dur)}</Text>
             </View>
-            <Text style={styles.durHint}>Adjusting duration moves the end time.</Text>
+            <Text style={styles.durHint}>Type hours (e.g. 8 or 12) to set the end time instantly.</Text>
 
             <Text style={[styles.field, { marginTop: 14 }]}>Headcount</Text>
             <View style={styles.hcRow}>
@@ -313,6 +335,9 @@ const styles = StyleSheet.create({
   timeBtn: { paddingHorizontal: 14, paddingVertical: 8 },
   timeBtnText: { color: theme.colors.primary, fontWeight: '700', fontSize: theme.font.body },
   timeVal: { fontSize: theme.font.h3, fontWeight: '800', color: theme.colors.text },
+  durRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  durInput: { width: 90, height: 46, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, backgroundColor: theme.colors.bg, paddingHorizontal: 14, fontSize: theme.font.h3, fontWeight: '800', color: theme.colors.text },
+  durUnit: { fontSize: theme.font.body, color: theme.colors.textMuted, fontWeight: '600' },
   durHint: { fontSize: theme.font.tiny, color: theme.colors.textSubtle, textAlign: 'center', marginTop: 6 },
   hcRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   hcBtn: { width: 44, height: 44, borderRadius: theme.radius.md, backgroundColor: theme.colors.bg, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'center', justifyContent: 'center' },
