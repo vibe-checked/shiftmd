@@ -221,29 +221,44 @@ export default function ShiftsScreen() {
             <TimeStepper value={endT} onChange={setEndT} />
 
             <Text style={[styles.field, { marginTop: 14 }]}>Duration (hours)</Text>
-            <View style={styles.durRow}>
+            <View style={styles.optRow}>
+              {[8, 12, 24].map((h) => {
+                const on = preview.dur === h * 60;
+                return (
+                  <Pressable key={h} style={[styles.pill, on && styles.pillOn]} onPress={() => setDuration(h * 60)}>
+                    <Text style={[styles.pillText, on && styles.pillTextOn]}>{h}h</Text>
+                  </Pressable>
+                );
+              })}
               <TextInput
-                style={styles.durInput}
+                style={styles.optInput}
                 value={durText}
                 onChangeText={onDurChange}
                 onFocus={() => setDurFocused(true)}
                 onBlur={() => setDurFocused(false)}
                 keyboardType="decimal-pad"
-                placeholder="8"
+                placeholder="hrs"
                 placeholderTextColor={theme.colors.textSubtle}
                 returnKeyType="done"
                 selectTextOnFocus
               />
-              <Text style={styles.durUnit}>= {durationLabel(preview.dur)}</Text>
             </View>
-            <Text style={styles.durHint}>Type hours (e.g. 8 or 12) to set the end time instantly.</Text>
 
             <Text style={[styles.field, { marginTop: 14 }]}>Headcount</Text>
-            <View style={styles.hcRow}>
-              <Pressable style={styles.hcBtn} onPress={() => setHeadcount(Math.max(1, headcount - 1))}><Text style={styles.hcBtnText}>−</Text></Pressable>
-              <Text style={styles.hcVal}>{headcount}</Text>
-              <Pressable style={styles.hcBtn} onPress={() => setHeadcount(Math.min(20, headcount + 1))}><Text style={styles.hcBtnText}>+</Text></Pressable>
-              <Text style={styles.hcHint}>physicians needed</Text>
+            <View style={styles.optRow}>
+              {[2, 3, 4, 5, 6].map((n) => {
+                const on = headcount === n;
+                return (
+                  <Pressable key={n} style={[styles.pill, on && styles.pillOn]} onPress={() => setHeadcount(n)}>
+                    <Text style={[styles.pillText, on && styles.pillTextOn]}>{n}</Text>
+                  </Pressable>
+                );
+              })}
+              <View style={styles.hcStep}>
+                <Pressable style={styles.hcBtnSm} onPress={() => setHeadcount(Math.max(1, headcount - 1))}><Text style={styles.hcBtnText}>−</Text></Pressable>
+                <Text style={styles.hcValSm}>{headcount}</Text>
+                <Pressable style={styles.hcBtnSm} onPress={() => setHeadcount(Math.min(20, headcount + 1))}><Text style={styles.hcBtnText}>+</Text></Pressable>
+              </View>
             </View>
 
             <Button title={editing ? 'Save shift' : 'Add shift'} onPress={save} style={{ marginTop: 18 }} />
@@ -331,13 +346,14 @@ const styles = StyleSheet.create({
   timeBtn: { paddingHorizontal: 14, paddingVertical: 8 },
   timeBtnText: { color: theme.colors.primary, fontWeight: '700', fontSize: theme.font.body },
   timeVal: { fontSize: theme.font.h3, fontWeight: '800', color: theme.colors.text },
-  durRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  durInput: { width: 90, height: 46, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, backgroundColor: theme.colors.bg, paddingHorizontal: 14, fontSize: theme.font.h3, fontWeight: '800', color: theme.colors.text },
-  durUnit: { fontSize: theme.font.body, color: theme.colors.textMuted, fontWeight: '600' },
-  durHint: { fontSize: theme.font.tiny, color: theme.colors.textSubtle, textAlign: 'center', marginTop: 6 },
-  hcRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  hcBtn: { width: 44, height: 44, borderRadius: theme.radius.md, backgroundColor: theme.colors.bg, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'center', justifyContent: 'center' },
-  hcBtnText: { fontSize: 22, fontWeight: '700', color: theme.colors.primary },
-  hcVal: { fontSize: theme.font.h2, fontWeight: '800', color: theme.colors.text, minWidth: 28, textAlign: 'center' },
-  hcHint: { fontSize: theme.font.small, color: theme.colors.textMuted },
+  optRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  pill: { paddingHorizontal: 8, height: 38, minWidth: 30, borderRadius: 9, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.bg, alignItems: 'center', justifyContent: 'center' },
+  pillOn: { backgroundColor: theme.colors.primarySoft, borderColor: theme.colors.primary },
+  pillText: { fontSize: 14, fontWeight: '700', color: theme.colors.textMuted },
+  pillTextOn: { color: theme.colors.primary },
+  optInput: { flex: 1, minWidth: 44, height: 38, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 9, backgroundColor: theme.colors.bg, paddingHorizontal: 8, fontSize: theme.font.h3, fontWeight: '800', color: theme.colors.text, textAlign: 'center' },
+  hcStep: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: theme.colors.border, borderRadius: 9, backgroundColor: theme.colors.bg },
+  hcBtnSm: { width: 30, height: 38, alignItems: 'center', justifyContent: 'center' },
+  hcBtnText: { fontSize: 21, fontWeight: '700', color: theme.colors.primary },
+  hcValSm: { fontSize: theme.font.h3, fontWeight: '800', color: theme.colors.text, minWidth: 20, textAlign: 'center' },
 });
