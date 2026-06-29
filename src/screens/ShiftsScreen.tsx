@@ -5,7 +5,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../components/ui';
 import {
-  clock12, DAY_NAMES, durationLabel, offsetToDayTime, parseHHMM, shiftOffsets,
+  clock12, DAY_NAMES, durationLabel, offsetFromWeekStart, offsetToDayTime, parseHHMM, shiftOffsets,
 } from '../engine/shifttime';
 import { useStore } from '../store/store';
 import { theme } from '../theme';
@@ -56,6 +56,15 @@ export default function ShiftsScreen() {
     const o = shiftOffsets(startDay, startT, endDay, endT, wsMin);
     return { ...o, dur: o.endMin - o.startMin };
   }, [startDay, startT, endDay, endT, wsMin]);
+
+  // Editing the duration moves the END (start stays put).
+  const setDuration = (newDur: number) => {
+    const d = Math.max(30, Math.min(WEEK_MIN, newDur));
+    const startOff = offsetFromWeekStart(startDay, startT, wsMin);
+    const b = offsetToDayTime((startOff + d) % WEEK_MIN, wsMin);
+    setEndDay(b.day);
+    setEndT(b.timeMin);
+  };
 
   const totalWeeklyHours = useMemo(
     () => data.shifts.reduce((n, s) => n + (shiftDurationMin(s) / 60) * s.headcount, 0),
@@ -205,11 +214,13 @@ export default function ShiftsScreen() {
             <DayRow value={endDay} onChange={setEndDay} />
             <TimeStepper value={endT} onChange={setEndT} />
 
-            <View style={styles.previewBox}>
-              <Text style={styles.previewText}>
-                {preview.dur > 0 ? `Duration ${durationLabel(preview.dur)}` : 'End must be after start'}
-              </Text>
+            <Text style={[styles.field, { marginTop: 14 }]}>Duration</Text>
+            <View style={styles.timeStep}>
+              <Pressable style={styles.timeBtn} onPress={() => setDuration(preview.dur - 30)}><Text style={styles.timeBtnText}>−30m</Text></Pressable>
+              <Text style={styles.timeVal}>{durationLabel(preview.dur)}</Text>
+              <Pressable style={styles.timeBtn} onPress={() => setDuration(preview.dur + 30)}><Text style={styles.timeBtnText}>+30m</Text></Pressable>
             </View>
+            <Text style={styles.durHint}>Adjusting duration moves the end time.</Text>
 
             <Text style={[styles.field, { marginTop: 14 }]}>Headcount</Text>
             <View style={styles.hcRow}>
@@ -302,8 +313,7 @@ const styles = StyleSheet.create({
   timeBtn: { paddingHorizontal: 14, paddingVertical: 8 },
   timeBtnText: { color: theme.colors.primary, fontWeight: '700', fontSize: theme.font.body },
   timeVal: { fontSize: theme.font.h3, fontWeight: '800', color: theme.colors.text },
-  previewBox: { marginTop: 12, backgroundColor: theme.colors.primarySoft, borderRadius: theme.radius.sm, padding: 10 },
-  previewText: { fontSize: theme.font.small, color: theme.colors.primary, fontWeight: '700', textAlign: 'center' },
+  durHint: { fontSize: theme.font.tiny, color: theme.colors.textSubtle, textAlign: 'center', marginTop: 6 },
   hcRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   hcBtn: { width: 44, height: 44, borderRadius: theme.radius.md, backgroundColor: theme.colors.bg, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'center', justifyContent: 'center' },
   hcBtnText: { fontSize: 22, fontWeight: '700', color: theme.colors.primary },
