@@ -1,138 +1,90 @@
-// Builds a printable HTML document for a schedule, used by expo-print to make
-// the PDF that gets shared/emailed to physicians.
+// Printable HTML for a shift schedule (used by expo-print for the PDF).
 
-import { Physician, Schedule } from '../types';
-import {
-  dayNumber,
-  daysInMonth,
-  fromISO,
-  isWeekend,
-  monthLabel,
-  weekdayName,
-} from './dates';
-
-function initials(name: string): string {
-  return name
-    .replace(/^Dr\.?\s*/i, '')
-    .split(/\s+/)
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-}
+import { Physician, Schedule, ShiftInstance } from '../types';
+import { fromISO } from './dates';
 
 function esc(s: string): string {
-  return s.replace(/[&<>"]/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string),
-  );
+  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
+}
+function fmtDay(iso: string): string {
+  return fromISO(iso).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+}
+function fmtShort(iso: string): string {
+  return fromISO(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 export function buildScheduleHtml(schedule: Schedule, physicians: Physician[]): string {
   const byId = Object.fromEntries(physicians.map((p) => [p.id, p]));
-  const days = daysInMonth(schedule.month);
+  const assignedBy: Record<string, string[]> = {};
+  schedule.assignments.forEach((a) => { (assignedBy[a.instanceId] ??= []).push(a.physicianId); });
 
-  const assignmentsByDate: Record<string, string[]> = {};
-  schedule.assignments.forEach((a) => {
-    (assignmentsByDate[a.date] ??= []).push(a.physicianId);
-  });
-  const gapDates = new Set(schedule.gaps.map((g) => g.date));
-
-  // Pad the grid so the 1st lands in the right weekday column (Sun=0).
-  const leadPad = fromISO(days[0]).getDay();
-  const cells: (string | null)[] = [...Array(leadPad).fill(null), ...days];
-  while (cells.length % 7 !== 0) cells.push(null);
-
-  const weekdayHeader = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-    .map((d) => `<th>${d}</th>`)
-    .join('');
-
-  const rows: string[] = [];
-  for (let i = 0; i < cells.length; i += 7) {
-    const week = cells.slice(i, i + 7);
-    const tds = week
-      .map((date) => {
-        if (!date) return '<td class="empty"></td>';
-        const ids = assignmentsByDate[date] ?? [];
-        const chips = ids
-          .map((id) => {
-            const p = byId[id];
-            if (!p) return '';
-            return `<span class="chip"><span class="dot" style="background:${p.color}"></span>${esc(initials(p.name))}</span>`;
-          })
-          .join('');
-        const gap = gapDates.has(date) ? '<span class="gap">understaffed</span>' : '';
-        const wkndClass = isWeekend(date) ? ' weekend' : '';
-        return `<td class="day${wkndClass}"><div class="dnum">${dayNumber(date)}</div><div class="chips">${chips || '<span class="none">—</span>'}</div>${gap}</td>`;
-      })
-      .join('');
-    rows.push(`<tr>${tds}</tr>`);
-  }
-
-  const legend = physicians
-    .map(
-      (p) =>
-        `<span class="leg"><span class="dot" style="background:${p.color}"></span>${esc(initials(p.name))} · ${esc(p.name)}</span>`,
-    )
-    .join('');
-
-  const statById = Object.fromEntries(schedule.stats.map((s) => [s.physicianId, s]));
-  const summaryRows = physicians
-    .map((p) => {
-      const st = statById[p.id];
+  const dates = new Map<string, ShiftInstance[]>();
+  schedule.instances.forEach((i) => { if (!dates.has(i.date)) dates.set(i.date, []); dates.get(i.date)!.push(i); });
+  const dayBlocks = [...dates.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([date, insts]) => {
+    insts.sort((a, b) => a.start - b.start);
+    const rows = insts.map((inst) => {
+      const ids = assignedBy[inst.id] ?? [];
+      const names = ids.map((id) => byId[id]).filter(Boolean).map((p) => {
+        return `<span class="who"><span class="dot" style="background:${p.color}"></span>${esc(p.name.replace(/^Dr\.?\s*/i, ''))}</span>`;
+      }).join('');
+      const gap = ids.length < inst.headcount ? `<span class="gap">−${inst.headcount - ids.length} needed</span>` : '';
       return `<tr>
-        <td><span class="dot" style="background:${p.color}"></span> ${esc(p.name)}</td>
-        <td>${p.fte === 1 ? 'FT' : p.fte + '×'}</td>
-        <td>${st?.shifts ?? 0}</td>
-        <td>${st?.hours ?? 0}</td>
-        <td>${st?.weekendsWorked ?? 0}</td>
+        <td class="c-shift"><span class="sdot" style="background:${inst.color}"></span>${esc(inst.label)}</td>
+        <td class="c-time">${esc(inst.startLabel)} – ${esc(inst.endLabel)}</td>
+        <td class="c-who">${names || '<span class="none">—</span>'} ${gap}</td>
       </tr>`;
-    })
-    .join('');
+    }).join('');
+    return `<div class="day"><div class="day-h">${fmtDay(date)}</div>
+      <table class="grid">${rows}</table></div>`;
+  }).join('');
+
+  const summaryRows = physicians.map((p) => {
+    const st = schedule.stats.find((s) => s.physicianId === p.id);
+    const hrs = st?.hours ?? 0;
+    const dev = st?.deviation ?? schedule.rules.targetHours;
+    return `<tr><td><span class="dot" style="background:${p.color}"></span> ${esc(p.name)}</td>
+      <td>${st?.shifts ?? 0}</td><td>${hrs}</td>
+      <td>${dev >= 0 ? dev + 'h under' : (-dev) + 'h over'}</td></tr>`;
+  }).join('');
 
   const totalGap = schedule.gaps.reduce((n, g) => n + (g.needed - g.filled), 0);
-  const gapNote =
-    totalGap > 0
-      ? `<p class="warn">⚠ ${totalGap} shift slot(s) across ${schedule.gaps.length} day(s) could not be filled — see the “understaffed” days.</p>`
-      : `<p class="ok">✓ All shifts covered. Weekend limit (≤${schedule.rules.maxWeekendsPerMonth}/mo) and rules respected.</p>`;
+  const note = totalGap > 0
+    ? `<p class="warn">⚠ ${totalGap} shift slot(s) could not be filled within the rest rules.</p>`
+    : `<p class="ok">✓ Every shift fully staffed — no rule violations.</p>`;
 
-  return `<!DOCTYPE html>
-<html><head><meta charset="utf-8" />
+  return `<!DOCTYPE html><html><head><meta charset="utf-8" />
 <style>
-  @page { size: A4 landscape; margin: 16px; }
+  @page { size: A4 portrait; margin: 18px; }
   * { box-sizing: border-box; }
   body { font-family: -apple-system, Helvetica, Arial, sans-serif; color: #101828; margin: 0; }
-  h1 { font-size: 20px; margin: 0 0 2px; }
-  .sub { color: #667085; font-size: 11px; margin: 0 0 10px; }
-  .ok { color: #059669; font-size: 11px; margin: 6px 0; }
-  .warn { color: #B42318; font-size: 11px; margin: 6px 0; }
-  table.cal { width: 100%; border-collapse: collapse; table-layout: fixed; }
-  table.cal th { background: #F2F4F7; font-size: 10px; color: #475467; padding: 4px; border: 1px solid #E4E7EC; }
-  td.day, td.empty { border: 1px solid #E4E7EC; vertical-align: top; height: 78px; padding: 3px; }
-  td.empty { background: #FAFBFC; }
-  td.weekend { background: #FFF7ED; }
-  .dnum { font-size: 11px; font-weight: 700; color: #344054; margin-bottom: 2px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 2px; }
-  .chip { font-size: 8.5px; font-weight: 700; color: #344054; background: #F2F4F7; border-radius: 8px; padding: 1px 4px 1px 2px; display: inline-flex; align-items: center; gap: 2px; }
-  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
-  .none { color: #98A2B3; font-size: 10px; }
-  .gap { display: inline-block; margin-top: 2px; font-size: 7.5px; color: #B42318; font-weight: 700; }
-  .legend { margin: 10px 0; font-size: 9.5px; color: #475467; display: flex; flex-wrap: wrap; gap: 8px; }
-  .leg { display: inline-flex; align-items: center; gap: 3px; }
-  table.sum { border-collapse: collapse; margin-top: 8px; font-size: 10px; }
-  table.sum th, table.sum td { border: 1px solid #E4E7EC; padding: 4px 10px; text-align: left; }
+  h1 { font-size: 19px; margin: 0 0 2px; }
+  .sub { color: #667085; font-size: 11px; margin: 0 0 8px; }
+  .ok { color: #059669; font-size: 11px; margin: 4px 0 12px; }
+  .warn { color: #B42318; font-size: 11px; margin: 4px 0 12px; }
+  .day { margin-bottom: 10px; break-inside: avoid; }
+  .day-h { font-size: 12px; font-weight: 800; color: #344054; border-bottom: 1.5px solid #E4E7EC; padding-bottom: 3px; margin-bottom: 4px; }
+  table.grid { width: 100%; border-collapse: collapse; }
+  table.grid td { font-size: 10px; padding: 3px 6px; vertical-align: top; border-bottom: 1px solid #F2F4F7; }
+  .c-shift { width: 18%; font-weight: 700; }
+  .c-time { width: 30%; color: #475467; }
+  .sdot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; }
+  .who { display: inline-block; margin-right: 8px; white-space: nowrap; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 3px; }
+  .none { color: #98A2B3; }
+  .gap { color: #B42318; font-weight: 700; }
+  h2 { font-size: 13px; margin: 14px 0 6px; }
+  table.sum { border-collapse: collapse; font-size: 10px; width: 100%; }
+  table.sum th, table.sum td { border: 1px solid #E4E7EC; padding: 4px 8px; text-align: left; }
   table.sum th { background: #F2F4F7; color: #475467; }
   .foot { margin-top: 12px; font-size: 9px; color: #98A2B3; }
-</style></head>
-<body>
-  <h1>Call Schedule — ${monthLabel(schedule.month)}</h1>
-  <p class="sub">Generated ${new Date(schedule.createdAt).toLocaleDateString()} · ${physicians.length} physicians · ${schedule.rules.weekdayCoverage} weekday / ${schedule.rules.weekendCoverage} weekend coverage</p>
-  ${gapNote}
-  <table class="cal"><thead><tr>${weekdayHeader}</tr></thead><tbody>${rows.join('')}</tbody></table>
-  <div class="legend">${legend}</div>
-  <table class="sum">
-    <thead><tr><th>Physician</th><th>FTE</th><th>Shifts</th><th>Hours</th><th>Weekends</th></tr></thead>
-    <tbody>${summaryRows}</tbody>
-  </table>
-  <p class="foot">ShiftMD · physician call schedule</p>
+</style></head><body>
+  <h1>Shift Schedule — ${fmtShort(schedule.startDate)} to ${fmtShort(schedule.endDate)}</h1>
+  <p class="sub">Generated ${new Date(schedule.createdAt).toLocaleDateString()} · ${physicians.length} physicians · ${schedule.weeks} weeks · target ${schedule.rules.targetHours}h</p>
+  ${note}
+  ${dayBlocks}
+  <h2>Hours per physician</h2>
+  <table class="sum"><thead><tr><th>Physician</th><th>Shifts</th><th>Hours</th><th>vs ${schedule.rules.targetHours}h target</th></tr></thead>
+  <tbody>${summaryRows}</tbody></table>
+  <p class="foot">ShiftMD · physician shift schedule</p>
 </body></html>`;
 }

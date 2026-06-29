@@ -1,73 +1,40 @@
 import React from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { dayNumber, fromISO, isWeekend, weekdayName, weekendKey } from '../engine/dates';
+import { assignmentWarnings } from '../engine/solver';
 import { useStore } from '../store/store';
 import { theme } from '../theme';
 import { Schedule } from '../types';
 import { Avatar, Pill } from './ui';
 
 export interface SwapTarget {
-  date: string;
-  /** The physician being swapped out, or null to ADD someone to the day. */
+  instanceId: string;
+  /** physician being swapped out, or null to ADD someone. */
   physicianId: string | null;
 }
 
 export default function SwapShiftModal({
-  schedule,
-  target,
-  onClose,
-}: {
-  schedule: Schedule;
-  target: SwapTarget | null;
-  onClose: () => void;
-}) {
+  schedule, target, onClose,
+}: { schedule: Schedule; target: SwapTarget | null; onClose: () => void }) {
   const { data, reassignShift } = useStore();
   if (!target) return null;
 
+  const inst = schedule.instances.find((i) => i.id === target.instanceId);
+  if (!inst) return null;
   const physById = Object.fromEntries(data.physicians.map((p) => [p.id, p]));
   const from = target.physicianId ? physById[target.physicianId] : null;
-  // In swap mode we need a valid "from" physician; in add mode there is none.
   if (target.physicianId && !from) return null;
   const addMode = !target.physicianId;
 
-  const dateLabel = `${weekdayName(target.date)} ${fromISO(target.date).toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-  })}`;
-
-  const onThisDay = new Set(
-    schedule.assignments.filter((a) => a.date === target.date).map((a) => a.physicianId),
-  );
-
-  const weekendCap = schedule.rules.maxWeekendsPerMonth;
-  const dateIsWeekend = isWeekend(target.date);
-
-  const isOff = (pid: string) =>
-    data.timeOff.some((t) => t.physicianId === pid && t.start <= target.date && target.date <= t.end);
-
-  const worksThisWeekend = (pid: string) =>
-    schedule.assignments.some(
-      (a) => a.physicianId === pid && weekendKey(a.date) === weekendKey(target.date),
-    );
-
-  const weekendsWorked = (pid: string) =>
-    schedule.stats.find((s) => s.physicianId === pid)?.weekendsWorked ?? 0;
-
-  // Candidates = everyone else not already on this day.
+  const onThis = new Set(schedule.assignments.filter((a) => a.instanceId === inst.id).map((a) => a.physicianId));
   const candidates = data.physicians
-    .filter((p) => p.id !== target.physicianId && !onThisDay.has(p.id))
-    .map((p) => {
-      const warnings: string[] = [];
-      if (isOff(p.id)) warnings.push('On time off');
-      if (dateIsWeekend && !worksThisWeekend(p.id) && weekendsWorked(p.id) >= weekendCap) {
-        warnings.push(`Would exceed ${weekendCap}-weekend limit`);
-      }
-      return { p, warnings };
-    });
+    .filter((p) => p.id !== target.physicianId && !onThis.has(p.id))
+    .map((p) => ({
+      p,
+      warnings: assignmentWarnings(p.id, inst, schedule.rules, schedule.instances, schedule.assignments, data.timeOff),
+    }));
 
   const choose = (toId: string | null) => {
-    // In add mode there's no physician to remove (fromId = ''), so it only adds.
-    reassignShift(schedule.id, target.date, target.physicianId ?? '', toId);
+    reassignShift(schedule.id, inst.id, target.physicianId ?? '', toId);
     onClose();
   };
 
@@ -77,59 +44,41 @@ export default function SwapShiftModal({
         <Pressable style={styles.backdrop} onPress={onClose} />
         <View style={styles.sheet}>
           <View style={styles.handle} />
-          <View style={styles.headRow}>
-            {from ? (
-              <Avatar name={from.name} color={from.color} size={34} />
-            ) : (
-              <View style={styles.addIcon}>
-                <Text style={styles.addIconText}>＋</Text>
-              </View>
-            )}
+          <View style={styles.head}>
+            {from ? <Avatar name={from.name} color={from.color} size={34} /> : <View style={styles.addIcon}><Text style={styles.addIconText}>＋</Text></View>}
             <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={styles.title}>{from ? from.name : `Add to ${dateLabel}`}</Text>
-              <Text style={styles.sub}>
-                {from
-                  ? `Can’t work ${dateLabel}? Pick who covers it${dateIsWeekend ? ' · weekend' : ''}.`
-                  : `Pick a physician to add to this day${dateIsWeekend ? ' · weekend' : ''}.`}
-              </Text>
+              <Text style={styles.title}>{from ? from.name : `Add to ${inst.label}`}</Text>
+              <Text style={styles.sub}>{inst.label} · {inst.startLabel} – {inst.endLabel}</Text>
             </View>
           </View>
 
           <Text style={styles.section}>{addMode ? 'ADD A PHYSICIAN' : 'REASSIGN THIS SHIFT TO'}</Text>
-          <ScrollView style={{ maxHeight: 360 }} contentContainerStyle={{ paddingBottom: 4 }}>
+          <ScrollView style={{ maxHeight: 360 }}>
             {candidates.length === 0 ? (
-              <Text style={styles.empty}>Everyone else is already working this day.</Text>
-            ) : (
-              candidates.map(({ p, warnings }) => (
-                <Pressable key={p.id} style={styles.cand} onPress={() => choose(p.id)}>
-                  <Avatar name={p.name} color={p.color} size={28} />
-                  <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={styles.candName}>{p.name}</Text>
-                    {warnings.length > 0 && (
-                      <View style={styles.warnRow}>
-                        {warnings.map((w) => (
-                          <Pill key={w} label={`⚠ ${w}`} color={theme.colors.warning} bg={theme.colors.warningSoft} />
-                        ))}
-                      </View>
-                    )}
-                  </View>
-                  <Text style={styles.pick}>Assign →</Text>
-                </Pressable>
-              ))
-            )}
+              <Text style={styles.empty}>Everyone else is already on this shift.</Text>
+            ) : candidates.map(({ p, warnings }) => (
+              <Pressable key={p.id} style={styles.cand} onPress={() => choose(p.id)}>
+                <Avatar name={p.name} color={p.color} size={28} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.candName}>{p.name}</Text>
+                  {warnings.length > 0 && (
+                    <View style={styles.warnRow}>
+                      {warnings.map((w) => <Pill key={w} label={`⚠ ${w}`} color={theme.colors.warning} bg={theme.colors.warningSoft} />)}
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.pick}>Assign →</Text>
+              </Pressable>
+            ))}
           </ScrollView>
 
           {!addMode && (
             <Pressable style={styles.removeBtn} onPress={() => choose(null)}>
-              <Text style={styles.removeText}>Remove — leave this shift open</Text>
+              <Text style={styles.removeText}>Remove — leave this slot open</Text>
             </Pressable>
           )}
-          <Pressable style={styles.cancelBtn} onPress={onClose}>
-            <Text style={styles.cancelText}>Cancel</Text>
-          </Pressable>
-          <Text style={styles.note}>
-            Manual edits stay until you regenerate the schedule.
-          </Text>
+          <Pressable style={styles.cancelBtn} onPress={onClose}><Text style={styles.cancelText}>Cancel</Text></Pressable>
+          <Text style={styles.note}>Manual edits stay until you regenerate.</Text>
         </View>
       </View>
     </Modal>
@@ -139,46 +88,20 @@ export default function SwapShiftModal({
 const styles = StyleSheet.create({
   wrap: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.35)' },
-  sheet: {
-    backgroundColor: theme.colors.card,
-    borderTopLeftRadius: theme.radius.xl,
-    borderTopRightRadius: theme.radius.xl,
-    padding: 20,
-    paddingBottom: 34,
-  },
+  sheet: { backgroundColor: theme.colors.card, borderTopLeftRadius: theme.radius.xl, borderTopRightRadius: theme.radius.xl, padding: 20, paddingBottom: 34 },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: theme.colors.border, alignSelf: 'center', marginBottom: 14 },
-  headRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  addIcon: {
-    width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: theme.colors.primarySoft,
-  },
+  head: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  addIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.primarySoft },
   addIconText: { color: theme.colors.primary, fontSize: 22, fontWeight: '700', marginTop: -2 },
   title: { fontSize: theme.font.h2, fontWeight: '800', color: theme.colors.text },
   sub: { fontSize: theme.font.small, color: theme.colors.textMuted, marginTop: 2 },
   section: { fontSize: theme.font.tiny, fontWeight: '700', letterSpacing: 0.6, color: theme.colors.textSubtle, marginBottom: 8, marginLeft: 2 },
   empty: { color: theme.colors.textMuted, fontSize: theme.font.body, padding: 12, textAlign: 'center' },
-  cand: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 11,
-    paddingHorizontal: 12,
-    borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.bg,
-    marginBottom: 8,
-  },
+  cand: { flexDirection: 'row', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.bg, marginBottom: 8 },
   candName: { fontSize: theme.font.h3, fontWeight: '600', color: theme.colors.text },
   warnRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
   pick: { color: theme.colors.primary, fontWeight: '700', fontSize: theme.font.small },
-  removeBtn: {
-    marginTop: 8,
-    height: 48,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.dangerSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  removeBtn: { marginTop: 8, height: 48, borderRadius: theme.radius.md, backgroundColor: theme.colors.dangerSoft, alignItems: 'center', justifyContent: 'center' },
   removeText: { color: theme.colors.danger, fontWeight: '700', fontSize: theme.font.body },
   cancelBtn: { marginTop: 8, height: 48, alignItems: 'center', justifyContent: 'center' },
   cancelText: { color: theme.colors.textMuted, fontWeight: '700', fontSize: theme.font.body },

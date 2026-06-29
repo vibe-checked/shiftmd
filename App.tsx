@@ -8,6 +8,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import PhysiciansScreen from './src/screens/PhysiciansScreen';
 import RulesScreen from './src/screens/RulesScreen';
 import ScheduleScreen from './src/screens/ScheduleScreen';
+import ShiftsScreen from './src/screens/ShiftsScreen';
 import TimeOffScreen from './src/screens/TimeOffScreen';
 import { StoreProvider } from './src/store/store';
 import { theme } from './src/theme';
@@ -16,6 +17,7 @@ const Tab = createBottomTabNavigator();
 
 const ICONS: Record<string, string> = {
   Schedule: '🗓️',
+  Shifts: '🗂️',
   Physicians: '🩺',
   TimeOff: '🏖️',
   Rules: '⚙️',
@@ -50,6 +52,7 @@ export default function App() {
               })}
             >
               <Tab.Screen name="Schedule" component={ScheduleScreen} />
+              <Tab.Screen name="Shifts" component={ShiftsScreen} />
               <Tab.Screen name="Physicians" component={PhysiciansScreen} />
               <Tab.Screen name="TimeOff" component={TimeOffScreen} options={{ title: 'Time Off' }} />
               <Tab.Screen name="Rules" component={RulesScreen} />

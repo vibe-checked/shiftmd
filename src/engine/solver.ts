@@ -1,12 +1,12 @@
-// Deterministic greedy constraint solver for physician scheduling.
+// Interval scheduler for the weekly shift-template model.
 //
-// Strategy: walk the month day by day. For each day we must staff `coverage`
-// physicians. We only ever consider *eligible* physicians (those who break no
-// HARD rule), so the output can never violate a hard constraint — at worst a
-// day is left under-covered, which we report as a gap. Among eligible
-// candidates we pick the ones who most "need" the shift (furthest below their
-// weekly + monthly targets, fewest weekends so far), which spreads the work
-// evenly and pushes everyone toward their target hours.
+// Strategy: materialize every shift instance across the horizon, then walk them
+// in chronological order. For each instance we fill its headcount from the
+// physicians who break NO hard rule — no overlap with an existing assignment,
+// the required rest gap since their last shift (rest length depends on that
+// last shift's duration), and not on time off. Among eligible physicians we
+// pick whoever is furthest below the global target, which balances hours.
+// Slots that can't be filled are reported as gaps rather than breaking a rule.
 
 import {
   Assignment,
@@ -16,245 +16,287 @@ import {
   PhysicianStat,
   Rules,
   Schedule,
+  Shift,
+  ShiftInstance,
   TimeOff,
 } from '../types';
+import { addDays } from './dates';
 import {
-  addDays,
-  daysInMonth,
-  isWeekend,
-  weekKey,
-  weekendKey,
-} from './dates';
+  clock12,
+  DAY_NAMES,
+  horizonWeeks,
+  mondayOf,
+  msToISODate,
+  parseHHMM,
+  weekBaseMs,
+} from './shifttime';
 
-interface Tracker {
-  shifts: number;
-  hours: number;
-  /** Distinct weekend keys this physician has worked this month. */
-  weekends: Set<string>;
-  /** shifts worked, keyed by week-of-month (Monday key). */
-  shiftsByWeek: Record<string, number>;
-  /** dates assigned, for consecutive-day checks. */
-  assigned: Set<ISODate>;
+function dayName(ms: number): string {
+  const dow = new Date(ms).getDay(); // 0=Sun..6=Sat
+  return DAY_NAMES[dow === 0 ? 6 : dow - 1];
 }
 
-function buildTimeOffIndex(timeOff: TimeOff[]): Map<string, Set<ISODate>> {
-  const idx = new Map<string, Set<ISODate>>();
-  for (const t of timeOff) {
-    let cur = t.start;
-    // guard against reversed ranges
-    if (t.end < t.start) continue;
-    while (cur <= t.end) {
-      if (!idx.has(t.physicianId)) idx.set(t.physicianId, new Set());
-      idx.get(t.physicianId)!.add(cur);
-      cur = addDays(cur, 1);
+function clockOf(ms: number): string {
+  const d = new Date(ms);
+  return clock12(d.getHours() * 60 + d.getMinutes());
+}
+
+/** Build every concrete shift occurrence across the horizon. */
+export function materialize(
+  startDate: ISODate,
+  shifts: Shift[],
+  rules: Rules,
+): { instances: ShiftInstance[]; weeks: ISODate[] } {
+  const weekStartMin = parseHHMM(rules.weekStartTime);
+  const startMonday = mondayOf(startDate);
+  const weeks = horizonWeeks(startMonday, rules.horizonMonths);
+  const instances: ShiftInstance[] = [];
+  weeks.forEach((monday, wi) => {
+    const base = weekBaseMs(monday, weekStartMin);
+    for (const s of shifts) {
+      const start = base + s.startMin * 60000;
+      const end = base + s.endMin * 60000;
+      const date = msToISODate(start);
+      const endDate = msToISODate(end - 60000); // last minute covered
+      instances.push({
+        id: `${s.id}@${wi}`,
+        shiftId: s.id,
+        label: s.label,
+        color: s.color,
+        date,
+        endDate,
+        start,
+        end,
+        durationMin: s.endMin - s.startMin,
+        headcount: s.headcount,
+        startLabel: `${dayName(start)} ${clockOf(start)}`,
+        endLabel: `${dayName(end)} ${clockOf(end)}`,
+      });
     }
+  });
+  instances.sort((a, b) => a.start - b.start || (a.shiftId < b.shiftId ? -1 : 1));
+  return { instances, weeks };
+}
+
+interface Track {
+  hours: number;
+  shifts: number;
+  intervals: { start: number; end: number; durationMin: number }[];
+}
+
+function buildOffIndex(timeOff: TimeOff[]): Map<string, { start: ISODate; end: ISODate }[]> {
+  const idx = new Map<string, { start: ISODate; end: ISODate }[]>();
+  for (const t of timeOff) {
+    if (t.end < t.start) continue;
+    if (!idx.has(t.physicianId)) idx.set(t.physicianId, []);
+    idx.get(t.physicianId)!.push({ start: t.start, end: t.end });
   }
   return idx;
 }
 
-function consecutiveDaysEndingBefore(
-  tracker: Tracker,
-  date: ISODate,
-  cap: number,
-): number {
-  // Count how many consecutive prior days are already assigned.
-  let count = 0;
-  let cur = addDays(date, -1);
-  while (tracker.assigned.has(cur) && count <= cap) {
-    count++;
-    cur = addDays(cur, -1);
-  }
-  return count;
+function onTimeOff(
+  offs: { start: ISODate; end: ISODate }[] | undefined,
+  inst: ShiftInstance,
+): boolean {
+  if (!offs) return false;
+  // overlap of date spans [inst.date, inst.endDate] and [off.start, off.end]
+  return offs.some((o) => o.start <= inst.endDate && inst.date <= o.end);
 }
 
 export function generateSchedule(
-  monthStart: ISODate,
+  startDate: ISODate,
   physicians: Physician[],
+  shifts: Shift[],
   rules: Rules,
   timeOff: TimeOff[],
 ): Schedule {
-  const days = daysInMonth(monthStart);
-  const offIndex = buildTimeOffIndex(timeOff);
+  const { instances, weeks } = materialize(startDate, shifts, rules);
+  const offIndex = buildOffIndex(timeOff);
 
-  const trackers = new Map<string, Tracker>();
-  for (const p of physicians) {
-    trackers.set(p.id, {
-      shifts: 0,
-      hours: 0,
-      weekends: new Set(),
-      shiftsByWeek: {},
-      assigned: new Set(),
-    });
-  }
+  const tracks = new Map<string, Track>();
+  physicians.forEach((p) => tracks.set(p.id, { hours: 0, shifts: 0, intervals: [] }));
 
-  const weeklyTargetShifts = (fte: number) =>
-    (rules.weeklyTargetHours * fte) / rules.hoursPerShift;
+  const restThresholdMs = rules.restThresholdHours * 3600000;
+  const shortRestMs = rules.shortRestHours * 3600000;
+  const longRestMs = rules.longRestHours * 3600000;
+  const target = rules.targetHours;
 
   const assignments: Assignment[] = [];
   const gaps: CoverageGap[] = [];
 
-  for (const date of days) {
-    const weekend = isWeekend(date);
-    const coverage = weekend ? rules.weekendCoverage : rules.weekdayCoverage;
-    const wk = weekKey(date);
-    const wknd = weekendKey(date);
-
-    // Build the eligible candidate list for this day.
-    const candidates = physicians.filter((p) => {
-      const t = trackers.get(p.id)!;
-      // HARD: time off
-      if (offIndex.get(p.id)?.has(date)) return false;
-      // HARD: already assigned today (shouldn't happen, but be safe)
-      if (t.assigned.has(date)) return false;
-      // HARD: max consecutive days
-      const consec = consecutiveDaysEndingBefore(t, date, rules.maxConsecutiveDays);
-      if (consec >= rules.maxConsecutiveDays) return false;
-      // HARD: max weekends per month (only blocks if this is a NEW weekend)
-      if (
-        weekend &&
-        !t.weekends.has(wknd) &&
-        t.weekends.size >= rules.maxWeekendsPerMonth
-      ) {
-        return false;
+  for (const inst of instances) {
+    const eligible = physicians.filter((p) => {
+      const t = tracks.get(p.id)!;
+      if (onTimeOff(offIndex.get(p.id), inst)) return false;
+      // overlap with any existing assignment
+      for (const iv of t.intervals) {
+        if (iv.start < inst.end && inst.start < iv.end) return false;
+      }
+      // rest since the most recent prior shift
+      let prevEnd = -Infinity;
+      let prevDur = 0;
+      for (const iv of t.intervals) {
+        if (iv.end <= inst.start && iv.end > prevEnd) {
+          prevEnd = iv.end;
+          prevDur = iv.durationMin;
+        }
+      }
+      if (prevEnd > -Infinity) {
+        const need = prevDur > rules.restThresholdHours * 60 ? longRestMs : shortRestMs;
+        if (inst.start - prevEnd < need) return false;
       }
       return true;
     });
 
-    // Score: higher = more deserving of this shift. Sort descending.
-    const scored = candidates.map((p) => {
-      const t = trackers.get(p.id)!;
-      const target = weeklyTargetShifts(p.fte);
-      const thisWeek = t.shiftsByWeek[wk] ?? 0;
-      const weeklyDeficit = target - thisWeek; // want to fill the week
-      const monthlyLoad = t.shifts; // spread total load
-      let score = weeklyDeficit * 100 - monthlyLoad * 5;
-      if (weekend) {
-        // Prefer physicians who've worked fewer weekends; strongly prefer
-        // those already on this weekend (avoid spreading one weekend across
-        // many people) but never exceed the cap.
-        score -= t.weekends.size * 40;
-        if (t.weekends.has(wknd)) score += 25;
-      }
+    const scored = eligible.map((p) => {
+      const t = tracks.get(p.id)!;
+      // furthest below target first; tie-break: fewer shifts, then id.
+      const deficitHours = target - t.hours;
+      const score = deficitHours * 1000 - t.shifts;
       return { p, score };
     });
+    scored.sort((a, b) => (b.score !== a.score ? b.score - a.score : a.p.id < b.p.id ? -1 : 1));
 
-    scored.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return a.p.id < b.p.id ? -1 : 1; // deterministic tie-break
-    });
-
-    const picked = scored.slice(0, coverage);
+    const picked = scored.slice(0, inst.headcount);
     for (const { p } of picked) {
-      const t = trackers.get(p.id)!;
+      const t = tracks.get(p.id)!;
+      t.hours += inst.durationMin / 60;
       t.shifts += 1;
-      t.hours += rules.hoursPerShift;
-      t.assigned.add(date);
-      t.shiftsByWeek[wk] = (t.shiftsByWeek[wk] ?? 0) + 1;
-      if (weekend) t.weekends.add(wknd);
-      assignments.push({ date, physicianId: p.id });
+      t.intervals.push({ start: inst.start, end: inst.end, durationMin: inst.durationMin });
+      assignments.push({ instanceId: inst.id, physicianId: p.id });
     }
-
-    if (picked.length < coverage) {
-      gaps.push({ date, needed: coverage, filled: picked.length });
+    if (picked.length < inst.headcount) {
+      gaps.push({
+        instanceId: inst.id,
+        date: inst.date,
+        label: `${inst.label} · ${inst.startLabel}`,
+        needed: inst.headcount,
+        filled: picked.length,
+      });
     }
   }
 
-  const stats = computeStats(monthStart, physicians, rules, assignments, trackers);
+  const stats = computeStats(physicians, rules, instances, assignments);
+  const endMonday = weeks.length ? addDays(weeks[weeks.length - 1], 7) : startDate;
 
   return {
-    id: `sch_${monthStart}_${assignments.length}_${gaps.length}`,
-    month: monthStart,
+    id: `sch_${mondayOf(startDate)}_${rules.horizonMonths}_${assignments.length}_${gaps.length}`,
+    startDate: mondayOf(startDate),
+    endDate: addDays(endMonday, -1),
+    weeks: weeks.length,
     createdAt: new Date().toISOString(),
     rules,
+    shifts,
+    instances,
     assignments,
     gaps,
     stats,
   };
 }
 
-function computeStats(
-  monthStart: ISODate,
+export function computeStats(
   physicians: Physician[],
   rules: Rules,
+  instances: ShiftInstance[],
   assignments: Assignment[],
-  trackers: Map<string, Tracker>,
 ): PhysicianStat[] {
+  const byId = new Map(instances.map((i) => [i.id, i]));
+  const acc = new Map<string, { hours: number; shifts: number }>();
+  physicians.forEach((p) => acc.set(p.id, { hours: 0, shifts: 0 }));
+  for (const a of assignments) {
+    const inst = byId.get(a.instanceId);
+    const t = acc.get(a.physicianId);
+    if (!inst || !t) continue;
+    t.hours += inst.durationMin / 60;
+    t.shifts += 1;
+  }
   return physicians.map((p) => {
-    const t = trackers.get(p.id)!;
-    // Hours deviation: per week, |actual − target|, summed.
-    const target = (rules.weeklyTargetHours * p.fte);
-    let deviation = 0;
-    const weeks = new Set<string>();
-    daysInMonth(monthStart).forEach((d) => weeks.add(weekKey(d)));
-    weeks.forEach((wk) => {
-      const shifts = t.shiftsByWeek[wk] ?? 0;
-      deviation += Math.abs(shifts * rules.hoursPerShift - target);
-    });
+    const t = acc.get(p.id)!;
     return {
       physicianId: p.id,
       shifts: t.shifts,
-      hours: t.hours,
-      weekendsWorked: t.weekends.size,
-      hoursDeviation: deviation,
+      hours: Math.round(t.hours * 10) / 10,
+      deviation: Math.round((rules.targetHours - t.hours) * 10) / 10,
     };
   });
 }
 
-/**
- * Recompute coverage gaps + per-physician stats from an arbitrary set of
- * assignments. Used after a manual swap/reassignment so the schedule's derived
- * data stays consistent with its (hand-edited) assignments.
- */
+/** Recompute gaps + stats after a manual edit to assignments. */
 export function recomputeDerived(
-  month: ISODate,
   physicians: Physician[],
   rules: Rules,
+  instances: ShiftInstance[],
   assignments: Assignment[],
 ): { stats: PhysicianStat[]; gaps: CoverageGap[] } {
-  const trackers = new Map<string, Tracker>();
-  physicians.forEach((p) =>
-    trackers.set(p.id, { shifts: 0, hours: 0, weekends: new Set(), shiftsByWeek: {}, assigned: new Set() }),
-  );
-  const perDate = new Map<string, number>();
-  for (const a of assignments) {
-    const t = trackers.get(a.physicianId);
-    if (!t) continue;
-    t.shifts += 1;
-    t.hours += rules.hoursPerShift;
-    t.assigned.add(a.date);
-    const wk = weekKey(a.date);
-    t.shiftsByWeek[wk] = (t.shiftsByWeek[wk] ?? 0) + 1;
-    if (isWeekend(a.date)) t.weekends.add(weekendKey(a.date));
-    perDate.set(a.date, (perDate.get(a.date) ?? 0) + 1);
-  }
-
+  const filled = new Map<string, number>();
+  assignments.forEach((a) => filled.set(a.instanceId, (filled.get(a.instanceId) ?? 0) + 1));
   const gaps: CoverageGap[] = [];
-  for (const date of daysInMonth(month)) {
-    const needed = isWeekend(date) ? rules.weekendCoverage : rules.weekdayCoverage;
-    const filled = perDate.get(date) ?? 0;
-    if (filled < needed) gaps.push({ date, needed, filled });
+  for (const inst of instances) {
+    const f = filled.get(inst.id) ?? 0;
+    if (f < inst.headcount) {
+      gaps.push({
+        instanceId: inst.id,
+        date: inst.date,
+        label: `${inst.label} · ${inst.startLabel}`,
+        needed: inst.headcount,
+        filled: f,
+      });
+    }
   }
-
-  const stats = computeStats(month, physicians, rules, assignments, trackers);
-  return { stats, gaps };
+  return { stats: computeStats(physicians, rules, instances, assignments), gaps };
 }
 
-/** Human-readable summary of how well a schedule met its targets. */
-export function summarizeSchedule(s: Schedule, physicians: Physician[]): string[] {
+/** Check whether assigning `physicianId` to `inst` would break a hard rule,
+ *  given the current assignments. Used by the swap UI to warn. */
+export function assignmentWarnings(
+  physicianId: string,
+  inst: ShiftInstance,
+  rules: Rules,
+  instances: ShiftInstance[],
+  assignments: Assignment[],
+  timeOff: TimeOff[],
+): string[] {
+  const byId = new Map(instances.map((i) => [i.id, i]));
+  const mine = assignments
+    .filter((a) => a.physicianId === physicianId && a.instanceId !== inst.id)
+    .map((a) => byId.get(a.instanceId)!)
+    .filter(Boolean);
+  const warnings: string[] = [];
+
+  const offs = buildOffIndex(timeOff).get(physicianId);
+  if (onTimeOff(offs, inst)) warnings.push('On time off');
+
+  for (const iv of mine) {
+    if (iv.start < inst.end && inst.start < iv.end) {
+      warnings.push('Overlaps another shift');
+      break;
+    }
+  }
+  // rest vs nearest neighbor on each side
+  const before = mine.filter((iv) => iv.end <= inst.start).sort((a, b) => b.end - a.end)[0];
+  if (before) {
+    const need = (before.durationMin > rules.restThresholdHours * 60 ? rules.longRestHours : rules.shortRestHours) * 3600000;
+    if (inst.start - before.end < need) warnings.push('Too little rest before');
+  }
+  const after = mine.filter((iv) => iv.start >= inst.end).sort((a, b) => a.start - b.start)[0];
+  if (after) {
+    const need = (inst.durationMin > rules.restThresholdHours * 60 ? rules.longRestHours : rules.shortRestHours) * 3600000;
+    if (after.start - inst.end < need) warnings.push('Too little rest after');
+  }
+  return warnings;
+}
+
+export function summarize(s: Schedule): string[] {
   const lines: string[] = [];
-  const totalGapSlots = s.gaps.reduce((n, g) => n + (g.needed - g.filled), 0);
-  if (totalGapSlots === 0) {
-    lines.push('All shifts covered with no rule violations.');
+  const totalGap = s.gaps.reduce((n, g) => n + (g.needed - g.filled), 0);
+  if (totalGap === 0) {
+    lines.push('All shifts fully staffed — no rule violations.');
   } else {
     lines.push(
-      `${totalGapSlots} shift slot${totalGapSlots === 1 ? '' : 's'} could not be filled across ${s.gaps.length} day${s.gaps.length === 1 ? '' : 's'} — not enough available physicians. Consider relaxing rules or reducing coverage.`,
+      `${totalGap} slot${totalGap === 1 ? '' : 's'} across ${s.gaps.length} shift${
+        s.gaps.length === 1 ? '' : 's'
+      } couldn’t be filled within the rest rules. Add physicians or relax rest/target.`,
     );
-  }
-  const overCap = s.stats.filter(
-    (st) => st.weekendsWorked > s.rules.maxWeekendsPerMonth,
-  );
-  if (overCap.length === 0) {
-    lines.push(`Weekend limit (≤${s.rules.maxWeekendsPerMonth}/mo) respected for everyone.`);
   }
   return lines;
 }

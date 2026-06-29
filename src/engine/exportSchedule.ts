@@ -4,8 +4,13 @@ import * as MailComposer from 'expo-mail-composer';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Physician, Schedule } from '../types';
-import { monthLabel } from './dates';
+import { fromISO } from './dates';
 import { buildScheduleHtml } from './scheduleHtml';
+
+function rangeLabel(s: Schedule): string {
+  const f = (iso: string) => fromISO(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return `${f(s.startDate)} – ${f(s.endDate)}`;
+}
 
 /** Render the schedule to a PDF file and return its local URI. */
 export async function makeSchedulePdf(
@@ -38,12 +43,12 @@ export async function emailSchedule(
 ): Promise<DeliverResult> {
   const available = await MailComposer.isAvailableAsync();
   if (!available) return { status: 'unavailable' };
-  const month = monthLabel(schedule.month);
+  const range = rangeLabel(schedule);
   const result = await MailComposer.composeAsync({
     recipients: recipientEmails(physicians),
-    subject: `Call Schedule — ${month}`,
+    subject: `Shift Schedule — ${range}`,
     body:
-      `Hi all,\n\nAttached is the call schedule for ${month}. ` +
+      `Hi all,\n\nAttached is the shift schedule for ${range}. ` +
       `Please review your assignments and flag any conflicts.\n\nThanks`,
     attachments: [pdfUri],
   });

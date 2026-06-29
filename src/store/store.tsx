@@ -8,8 +8,10 @@ import React, {
   useState,
 } from 'react';
 import { recomputeDerived } from '../engine/solver';
+import { shiftOffsets } from '../engine/shifttime';
 import {
   AppData,
+  Assignment,
   CalendarSettings,
   DEFAULT_CALENDAR_SETTINGS,
   DEFAULT_RULES,
@@ -17,45 +19,43 @@ import {
   PHYSICIAN_COLORS,
   Rules,
   Schedule,
+  Shift,
+  SHIFT_COLORS,
   TimeOff,
 } from '../types';
 
-const STORAGE_KEY = 'shiftmd:data:v1';
+const STORAGE_KEY = 'shiftmd:data:v2';
 
 const EMPTY: AppData = {
   physicians: [],
+  shifts: [],
   timeOff: [],
   rules: DEFAULT_RULES,
   schedules: [],
   calendarSettings: DEFAULT_CALENDAR_SETTINGS,
 };
 
-function uid(prefix: string): string {
-  return `${prefix}_${Math.random().toString(36).slice(2, 9)}${Date.now().toString(36).slice(-4)}`;
+function uid(p: string): string {
+  return `${p}_${Math.random().toString(36).slice(2, 9)}${Date.now().toString(36).slice(-4)}`;
 }
 
 interface StoreValue {
   data: AppData;
   loaded: boolean;
-  // physicians
-  addPhysician: (name: string, fte: number, email?: string) => void;
+  addPhysician: (name: string, email?: string) => void;
   updatePhysician: (id: string, patch: Partial<Physician>) => void;
   removePhysician: (id: string) => void;
-  // time off
+  addShift: (s: Omit<Shift, 'id' | 'color'>) => void;
+  updateShift: (id: string, patch: Partial<Shift>) => void;
+  removeShift: (id: string) => void;
   addTimeOff: (t: Omit<TimeOff, 'id'>) => void;
   removeTimeOff: (id: string) => void;
-  // calendar sync
   setPhysicianCalendar: (id: string, url: string, lastSync?: string) => void;
   replaceGoogleTimeOff: (physicianId: string, entries: TimeOff[]) => void;
   updateCalendarSettings: (patch: Partial<CalendarSettings>) => void;
-  // rules
   updateRules: (patch: Partial<Rules>) => void;
-  // schedules
   saveSchedule: (s: Schedule) => void;
-  removeSchedule: (id: string) => void;
-  /** Move a single day's shift from one physician to another (or clear it). */
-  reassignShift: (scheduleId: string, date: string, fromId: string, toId: string | null) => void;
-  // seed demo
+  reassignShift: (scheduleId: string, instanceId: string, fromId: string | '', toId: string | null) => void;
   loadSampleData: () => void;
   resetAll: () => void;
 }
@@ -80,34 +80,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           });
         }
       } catch (e) {
-        console.warn('Failed to load data', e);
+        console.warn('load failed', e);
       } finally {
         setLoaded(true);
       }
     })();
   }, []);
 
-  // Persist on every change once initial load is done.
   useEffect(() => {
     if (!loaded) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data)).catch((e) =>
-      console.warn('Failed to save data', e),
-    );
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data)).catch((e) => console.warn('save failed', e));
   }, [data, loaded]);
 
-  const addPhysician = useCallback((name: string, fte: number, email?: string) => {
+  const addPhysician = useCallback((name: string, email?: string) => {
     setData((d) => {
       const color = PHYSICIAN_COLORS[d.physicians.length % PHYSICIAN_COLORS.length];
-      const p: Physician = { id: uid('md'), name: name.trim(), color, fte, email: email?.trim() || undefined };
+      const p: Physician = { id: uid('md'), name: name.trim(), color, email: email?.trim() || undefined };
       return { ...d, physicians: [...d.physicians, p] };
     });
   }, []);
 
   const updatePhysician = useCallback((id: string, patch: Partial<Physician>) => {
-    setData((d) => ({
-      ...d,
-      physicians: d.physicians.map((p) => (p.id === id ? { ...p, ...patch } : p)),
-    }));
+    setData((d) => ({ ...d, physicians: d.physicians.map((p) => (p.id === id ? { ...p, ...patch } : p)) }));
   }, []);
 
   const removePhysician = useCallback((id: string) => {
@@ -116,6 +110,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       physicians: d.physicians.filter((p) => p.id !== id),
       timeOff: d.timeOff.filter((t) => t.physicianId !== id),
     }));
+  }, []);
+
+  const addShift = useCallback((s: Omit<Shift, 'id' | 'color'>) => {
+    setData((d) => {
+      const color = SHIFT_COLORS[d.shifts.length % SHIFT_COLORS.length];
+      return { ...d, shifts: [...d.shifts, { ...s, id: uid('sh'), color }] };
+    });
+  }, []);
+
+  const updateShift = useCallback((id: string, patch: Partial<Shift>) => {
+    setData((d) => ({ ...d, shifts: d.shifts.map((s) => (s.id === id ? { ...s, ...patch } : s)) }));
+  }, []);
+
+  const removeShift = useCallback((id: string) => {
+    setData((d) => ({ ...d, shifts: d.shifts.filter((s) => s.id !== id) }));
   }, []);
 
   const addTimeOff = useCallback((t: Omit<TimeOff, 'id'>) => {
@@ -130,9 +139,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setData((d) => ({
       ...d,
       physicians: d.physicians.map((p) =>
-        p.id === id
-          ? { ...p, calendarUrl: url.trim() || undefined, ...(lastSync ? { calendarLastSync: lastSync } : {}) }
-          : p,
+        p.id === id ? { ...p, calendarUrl: url.trim() || undefined, ...(lastSync ? { calendarLastSync: lastSync } : {}) } : p,
       ),
     }));
   }, []);
@@ -140,14 +147,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const replaceGoogleTimeOff = useCallback((physicianId: string, entries: TimeOff[]) => {
     setData((d) => ({
       ...d,
-      // Drop this physician's previously-imported entries; keep manual + others.
-      timeOff: [
-        ...d.timeOff.filter((t) => !(t.physicianId === physicianId && t.source === 'google')),
-        ...entries,
-      ],
-      physicians: d.physicians.map((p) =>
-        p.id === physicianId ? { ...p, calendarLastSync: new Date().toISOString() } : p,
-      ),
+      timeOff: [...d.timeOff.filter((t) => !(t.physicianId === physicianId && t.source === 'google')), ...entries],
+      physicians: d.physicians.map((p) => (p.id === physicianId ? { ...p, calendarLastSync: new Date().toISOString() } : p)),
     }));
   }, []);
 
@@ -160,29 +161,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const saveSchedule = useCallback((s: Schedule) => {
-    setData((d) => {
-      // Replace any existing schedule for the same month.
-      const others = d.schedules.filter((x) => x.month !== s.month);
-      return { ...d, schedules: [s, ...others] };
-    });
-  }, []);
-
-  const removeSchedule = useCallback((id: string) => {
-    setData((d) => ({ ...d, schedules: d.schedules.filter((s) => s.id !== id) }));
+    setData((d) => ({ ...d, schedules: [s, ...d.schedules.filter((x) => x.startDate !== s.startDate)].slice(0, 12) }));
   }, []);
 
   const reassignShift = useCallback(
-    (scheduleId: string, date: string, fromId: string, toId: string | null) => {
+    (scheduleId: string, instanceId: string, fromId: string | '', toId: string | null) => {
       setData((d) => {
         const sch = d.schedules.find((s) => s.id === scheduleId);
         if (!sch) return d;
-        let assignments = sch.assignments.filter(
-          (a) => !(a.date === date && a.physicianId === fromId),
-        );
-        if (toId && !assignments.some((a) => a.date === date && a.physicianId === toId)) {
-          assignments = [...assignments, { date, physicianId: toId }];
+        let assignments: Assignment[] = fromId
+          ? sch.assignments.filter((a) => !(a.instanceId === instanceId && a.physicianId === fromId))
+          : [...sch.assignments];
+        if (toId && !assignments.some((a) => a.instanceId === instanceId && a.physicianId === toId)) {
+          assignments = [...assignments, { instanceId, physicianId: toId }];
         }
-        const { stats, gaps } = recomputeDerived(sch.month, d.physicians, sch.rules, assignments);
+        const { stats, gaps } = recomputeDerived(d.physicians, sch.rules, sch.instances, assignments);
         const updated: Schedule = { ...sch, assignments, stats, gaps, edited: true };
         return { ...d, schedules: d.schedules.map((s) => (s.id === scheduleId ? updated : s)) };
       });
@@ -191,48 +184,32 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const loadSampleData = useCallback(() => {
-    const names = [
-      'Dr. Adler', 'Dr. Bello', 'Dr. Chen', 'Dr. Davies', 'Dr. Evans',
-      'Dr. Farooq', 'Dr. Gupta', 'Dr. Haddad', 'Dr. Ibrahim', 'Dr. Jensen',
-    ];
-    const physicians: Physician[] = names.map((name, i) => ({
-      id: uid('md'),
-      name,
-      color: PHYSICIAN_COLORS[i % PHYSICIAN_COLORS.length],
-      fte: i === 9 ? 0.6 : 1.0, // one part-time physician
-    }));
-    setData((d) => ({
-      ...d,
-      physicians,
-      rules: DEFAULT_RULES,
-      timeOff: [],
-    }));
+    const names = ['Dr. Adler', 'Dr. Bello', 'Dr. Chen', 'Dr. Davies', 'Dr. Vargas', 'Dr. Farooq', 'Dr. Gupta', 'Dr. Haddad', 'Dr. Ibrahim', 'Dr. Jensen'];
+    const physicians: Physician[] = names.map((name, i) => ({ id: uid('md'), name, color: PHYSICIAN_COLORS[i % PHYSICIAN_COLORS.length] }));
+    const ws = 510; // 08:30
+    const shifts: Shift[] = [];
+    for (let d = 0; d < 7; d++) {
+      const day = shiftOffsets(d, 510, d, 990, ws); // 08:30–16:30 (8h)
+      const eve = shiftOffsets(d, 990, d, 1290, ws); // 16:30–21:30 (5h)
+      const night = shiftOffsets(d, 1290, (d + 1) % 7, 510, ws); // 21:30 → next 08:30 (11h)
+      shifts.push({ id: uid('sh'), label: 'Day', ...day, headcount: 2, color: SHIFT_COLORS[0] });
+      shifts.push({ id: uid('sh'), label: 'Evening', ...eve, headcount: 1, color: SHIFT_COLORS[1] });
+      shifts.push({ id: uid('sh'), label: 'Night', ...night, headcount: 1, color: SHIFT_COLORS[2] });
+    }
+    setData((d) => ({ ...d, physicians, shifts, rules: DEFAULT_RULES, timeOff: [], schedules: [] }));
   }, []);
 
   const resetAll = useCallback(() => setData(EMPTY), []);
 
   const value = useMemo<StoreValue>(
     () => ({
-      data,
-      loaded,
-      addPhysician,
-      updatePhysician,
-      removePhysician,
-      addTimeOff,
-      removeTimeOff,
-      setPhysicianCalendar,
-      replaceGoogleTimeOff,
-      updateCalendarSettings,
-      updateRules,
-      saveSchedule,
-      removeSchedule,
-      reassignShift,
-      loadSampleData,
-      resetAll,
+      data, loaded, addPhysician, updatePhysician, removePhysician, addShift, updateShift, removeShift,
+      addTimeOff, removeTimeOff, setPhysicianCalendar, replaceGoogleTimeOff, updateCalendarSettings,
+      updateRules, saveSchedule, reassignShift, loadSampleData, resetAll,
     }),
-    [data, loaded, addPhysician, updatePhysician, removePhysician, addTimeOff,
-      removeTimeOff, setPhysicianCalendar, replaceGoogleTimeOff, updateCalendarSettings,
-      updateRules, saveSchedule, removeSchedule, reassignShift, loadSampleData, resetAll],
+    [data, loaded, addPhysician, updatePhysician, removePhysician, addShift, updateShift, removeShift,
+      addTimeOff, removeTimeOff, setPhysicianCalendar, replaceGoogleTimeOff, updateCalendarSettings,
+      updateRules, saveSchedule, reassignShift, loadSampleData, resetAll],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

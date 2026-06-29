@@ -1,0 +1,274 @@
+import React, { useMemo, useState } from 'react';
+import {
+  Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Button, EmptyState } from '../components/ui';
+import {
+  clock12, DAY_NAMES, durationLabel, offsetToDayTime, parseHHMM, shiftOffsets,
+} from '../engine/shifttime';
+import { useStore } from '../store/store';
+import { theme } from '../theme';
+import { Shift, shiftDurationMin, WEEK_MIN } from '../types';
+
+interface Seg { row: number; left: number; width: number; shift: Shift }
+
+function segmentsFor(shifts: Shift[]): Seg[] {
+  const segs: Seg[] = [];
+  for (const s of shifts) {
+    const startDay = Math.floor(s.startMin / 1440);
+    const endDay = Math.floor((s.endMin - 1) / 1440);
+    for (let d = startDay; d <= endDay; d++) {
+      const dayStart = d * 1440;
+      const segStart = Math.max(s.startMin, dayStart);
+      const segEnd = Math.min(s.endMin, dayStart + 1440);
+      segs.push({
+        row: ((d % 7) + 7) % 7,
+        left: ((segStart - dayStart) / 1440) * 100,
+        width: Math.max(((segEnd - segStart) / 1440) * 100, 4),
+        shift: s,
+      });
+    }
+  }
+  return segs;
+}
+
+export default function ShiftsScreen() {
+  const { data, addShift, updateShift, removeShift, loadSampleData } = useStore();
+  const wsMin = parseHHMM(data.rules.weekStartTime);
+
+  const [modal, setModal] = useState(false);
+  const [editing, setEditing] = useState<Shift | null>(null);
+  const [label, setLabel] = useState('');
+  const [startDay, setStartDay] = useState(0);
+  const [startT, setStartT] = useState(wsMin);
+  const [endDay, setEndDay] = useState(0);
+  const [endT, setEndT] = useState((wsMin + 480) % 1440);
+  const [headcount, setHeadcount] = useState(1);
+
+  const segsByRow = useMemo(() => {
+    const rows: Seg[][] = [[], [], [], [], [], [], []];
+    segmentsFor(data.shifts).forEach((seg) => rows[seg.row].push(seg));
+    return rows;
+  }, [data.shifts]);
+
+  const preview = useMemo(() => {
+    const o = shiftOffsets(startDay, startT, endDay, endT, wsMin);
+    return { ...o, dur: o.endMin - o.startMin };
+  }, [startDay, startT, endDay, endT, wsMin]);
+
+  const totalWeeklyHours = useMemo(
+    () => data.shifts.reduce((n, s) => n + (shiftDurationMin(s) / 60) * s.headcount, 0),
+    [data.shifts],
+  );
+
+  const openAdd = () => {
+    setEditing(null);
+    setLabel('');
+    setStartDay(0); setStartT(wsMin); setEndDay(0); setEndT((wsMin + 480) % 1440);
+    setHeadcount(1);
+    setModal(true);
+  };
+  const openEdit = (s: Shift) => {
+    setEditing(s);
+    setLabel(s.label);
+    const a = offsetToDayTime(s.startMin, wsMin);
+    const b = offsetToDayTime(s.endMin % WEEK_MIN, wsMin);
+    setStartDay(a.day); setStartT(a.timeMin); setEndDay(b.day); setEndT(b.timeMin);
+    setHeadcount(s.headcount);
+    setModal(true);
+  };
+  const save = () => {
+    if (preview.dur <= 0) { Alert.alert('Invalid times', 'The shift end must be after its start.'); return; }
+    const payload = { label: label.trim() || 'Shift', startMin: preview.startMin, endMin: preview.endMin, headcount };
+    if (editing) updateShift(editing.id, payload);
+    else addShift(payload);
+    setModal(false);
+  };
+  const confirmRemove = (s: Shift) => {
+    Alert.alert('Remove shift', `Remove "${s.label}" from the weekly template?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => removeShift(s.id) },
+    ]);
+  };
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.header}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>Shifts</Text>
+          <Text style={styles.subtitle}>Weekly template · repeats every week</Text>
+        </View>
+        <Pressable style={styles.addBtn} onPress={openAdd}>
+          <Text style={styles.addBtnText}>+ Add</Text>
+        </Pressable>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.scroll}>
+        {data.shifts.length === 0 ? (
+          <>
+            <EmptyState icon="🗂️" title="No shifts yet" subtitle="Define the shifts in a week — each a time range with a headcount. They repeat every week." />
+            <Button title="Load sample week" variant="secondary" onPress={loadSampleData} />
+          </>
+        ) : (
+          <>
+            <Text style={styles.weekHint}>Each row is a day from {clock12(wsMin)}. Tap a block to edit.</Text>
+            <View style={styles.timeline}>
+              {DAY_NAMES.map((name, row) => (
+                <View key={name} style={styles.dayRow}>
+                  <Text style={styles.dayLabel}>{name}</Text>
+                  <View style={styles.track}>
+                    {[0.25, 0.5, 0.75].map((f) => (
+                      <View key={f} style={[styles.tick, { left: `${f * 100}%` }]} />
+                    ))}
+                    {segsByRow[row].map((seg, i) => (
+                      <Pressable
+                        key={seg.shift.id + i}
+                        onPress={() => openEdit(seg.shift)}
+                        style={[styles.block, { left: `${seg.left}%`, width: `${seg.width}%`, backgroundColor: seg.shift.color }]}
+                      >
+                        <Text numberOfLines={1} style={styles.blockText}>
+                          {seg.shift.label} ×{seg.shift.headcount}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </View>
+
+            <Text style={styles.sectionLabel}>ALL SHIFTS ({data.shifts.length})</Text>
+            {[...data.shifts].sort((a, b) => a.startMin - b.startMin).map((s) => (
+              <Pressable key={s.id} onPress={() => openEdit(s)} style={styles.listRow}>
+                <View style={[styles.dot, { backgroundColor: s.color }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.listLabel}>{s.label} · ×{s.headcount}</Text>
+                  <Text style={styles.listMeta}>
+                    {offsetLabel(s.startMin, wsMin)} → {offsetLabel(s.endMin, wsMin)} · {durationLabel(shiftDurationMin(s))}
+                  </Text>
+                </View>
+                <Pressable hitSlop={10} onPress={() => confirmRemove(s)}><Text style={styles.remove}>✕</Text></Pressable>
+              </Pressable>
+            ))}
+            <Text style={styles.totals}>
+              {data.shifts.length} shifts · {Math.round(totalWeeklyHours)} staffed hours per week
+            </Text>
+          </>
+        )}
+      </ScrollView>
+
+      <Modal visible={modal} animationType="slide" transparent onRequestClose={() => setModal(false)}>
+        <View style={styles.modalWrap}>
+          <Pressable style={styles.backdrop} onPress={() => setModal(false)} />
+          <View style={styles.sheet}>
+            <View style={styles.handle} />
+            <Text style={styles.sheetTitle}>{editing ? 'Edit shift' : 'Add shift'}</Text>
+
+            <Text style={styles.field}>Name</Text>
+            <TextInput style={styles.input} value={label} onChangeText={setLabel} placeholder="Day, Night, Call…" placeholderTextColor={theme.colors.textSubtle} />
+
+            <Text style={styles.field}>Starts</Text>
+            <DayRow value={startDay} onChange={setStartDay} />
+            <TimeStepper value={startT} onChange={setStartT} />
+
+            <Text style={[styles.field, { marginTop: 14 }]}>Ends</Text>
+            <DayRow value={endDay} onChange={setEndDay} />
+            <TimeStepper value={endT} onChange={setEndT} />
+
+            <View style={styles.previewBox}>
+              <Text style={styles.previewText}>
+                {preview.dur > 0 ? `Duration ${durationLabel(preview.dur)}` : 'End must be after start'}
+              </Text>
+            </View>
+
+            <Text style={[styles.field, { marginTop: 14 }]}>Headcount</Text>
+            <View style={styles.hcRow}>
+              <Pressable style={styles.hcBtn} onPress={() => setHeadcount(Math.max(1, headcount - 1))}><Text style={styles.hcBtnText}>−</Text></Pressable>
+              <Text style={styles.hcVal}>{headcount}</Text>
+              <Pressable style={styles.hcBtn} onPress={() => setHeadcount(Math.min(20, headcount + 1))}><Text style={styles.hcBtnText}>+</Text></Pressable>
+              <Text style={styles.hcHint}>physicians needed</Text>
+            </View>
+
+            <Button title={editing ? 'Save shift' : 'Add shift'} onPress={save} style={{ marginTop: 18 }} />
+            <Button title="Cancel" variant="ghost" onPress={() => setModal(false)} style={{ marginTop: 8 }} />
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+function offsetLabel(offset: number, wsMin: number): string {
+  const { day, timeMin } = offsetToDayTime(offset % WEEK_MIN, wsMin);
+  return `${DAY_NAMES[day]} ${clock12(timeMin)}`;
+}
+
+function DayRow({ value, onChange }: { value: number; onChange: (d: number) => void }) {
+  return (
+    <View style={styles.dayPick}>
+      {DAY_NAMES.map((n, i) => (
+        <Pressable key={n} style={[styles.dayChip, value === i && styles.dayChipOn]} onPress={() => onChange(i)}>
+          <Text style={[styles.dayChipText, value === i && styles.dayChipTextOn]}>{n}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+function TimeStepper({ value, onChange }: { value: number; onChange: (m: number) => void }) {
+  return (
+    <View style={styles.timeStep}>
+      <Pressable style={styles.timeBtn} onPress={() => onChange((value - 30 + 1440) % 1440)}><Text style={styles.timeBtnText}>−30m</Text></Pressable>
+      <Text style={styles.timeVal}>{clock12(value)}</Text>
+      <Pressable style={styles.timeBtn} onPress={() => onChange((value + 30) % 1440)}><Text style={styles.timeBtnText}>+30m</Text></Pressable>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.colors.bg },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 },
+  title: { fontSize: theme.font.h1, fontWeight: '800', color: theme.colors.text },
+  subtitle: { fontSize: theme.font.body, color: theme.colors.textMuted, marginTop: 2 },
+  addBtn: { backgroundColor: theme.colors.primary, paddingHorizontal: 16, paddingVertical: 10, borderRadius: theme.radius.md },
+  addBtnText: { color: '#fff', fontWeight: '700', fontSize: theme.font.body },
+  scroll: { paddingHorizontal: 16, paddingBottom: 48 },
+  weekHint: { fontSize: theme.font.small, color: theme.colors.textSubtle, marginBottom: 10, marginLeft: 2 },
+  timeline: { backgroundColor: theme.colors.card, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border, padding: 10, gap: 6 },
+  dayRow: { flexDirection: 'row', alignItems: 'center' },
+  dayLabel: { width: 34, fontSize: theme.font.tiny, fontWeight: '700', color: theme.colors.textMuted },
+  track: { flex: 1, height: 30, backgroundColor: theme.colors.bg, borderRadius: 6, overflow: 'hidden' },
+  tick: { position: 'absolute', top: 0, bottom: 0, width: 1, backgroundColor: theme.colors.border },
+  block: { position: 'absolute', top: 3, bottom: 3, borderRadius: 4, paddingHorizontal: 4, justifyContent: 'center', minWidth: 14 },
+  blockText: { color: '#fff', fontSize: 9, fontWeight: '700' },
+  sectionLabel: { fontSize: theme.font.tiny, fontWeight: '700', letterSpacing: 0.6, color: theme.colors.textSubtle, marginTop: 20, marginBottom: 8, marginLeft: 4 },
+  listRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.card, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border, padding: 12, marginBottom: 8 },
+  dot: { width: 12, height: 12, borderRadius: 6, marginRight: 12 },
+  listLabel: { fontSize: theme.font.h3, fontWeight: '700', color: theme.colors.text },
+  listMeta: { fontSize: theme.font.small, color: theme.colors.textMuted, marginTop: 2 },
+  remove: { color: theme.colors.textSubtle, fontSize: 18, fontWeight: '600', paddingHorizontal: 4 },
+  totals: { textAlign: 'center', color: theme.colors.textSubtle, fontSize: theme.font.small, marginTop: 12 },
+  modalWrap: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.35)' },
+  sheet: { backgroundColor: theme.colors.card, borderTopLeftRadius: theme.radius.xl, borderTopRightRadius: theme.radius.xl, padding: 22, paddingBottom: 36 },
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: theme.colors.border, alignSelf: 'center', marginBottom: 14 },
+  sheetTitle: { fontSize: theme.font.h2, fontWeight: '800', color: theme.colors.text, marginBottom: 14 },
+  field: { fontSize: theme.font.small, fontWeight: '700', color: theme.colors.textMuted, marginBottom: 8 },
+  input: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, paddingHorizontal: 14, height: 46, fontSize: theme.font.h3, color: theme.colors.text, backgroundColor: theme.colors.bg, marginBottom: 16 },
+  dayPick: { flexDirection: 'row', gap: 4, marginBottom: 8 },
+  dayChip: { flex: 1, height: 34, borderRadius: 8, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.bg },
+  dayChipOn: { backgroundColor: theme.colors.primarySoft, borderColor: theme.colors.primary },
+  dayChipText: { fontSize: theme.font.tiny, fontWeight: '700', color: theme.colors.textMuted },
+  dayChipTextOn: { color: theme.colors.primary },
+  timeStep: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: theme.colors.bg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border, paddingHorizontal: 6, height: 46 },
+  timeBtn: { paddingHorizontal: 14, paddingVertical: 8 },
+  timeBtnText: { color: theme.colors.primary, fontWeight: '700', fontSize: theme.font.body },
+  timeVal: { fontSize: theme.font.h3, fontWeight: '800', color: theme.colors.text },
+  previewBox: { marginTop: 12, backgroundColor: theme.colors.primarySoft, borderRadius: theme.radius.sm, padding: 10 },
+  previewText: { fontSize: theme.font.small, color: theme.colors.primary, fontWeight: '700', textAlign: 'center' },
+  hcRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  hcBtn: { width: 44, height: 44, borderRadius: theme.radius.md, backgroundColor: theme.colors.bg, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'center', justifyContent: 'center' },
+  hcBtnText: { fontSize: 22, fontWeight: '700', color: theme.colors.primary },
+  hcVal: { fontSize: theme.font.h2, fontWeight: '800', color: theme.colors.text, minWidth: 28, textAlign: 'center' },
+  hcHint: { fontSize: theme.font.small, color: theme.colors.textMuted },
+});
