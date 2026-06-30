@@ -165,6 +165,16 @@ export default function ShiftsScreen() {
       { text: 'Remove', style: 'destructive', onPress: () => { removeShift(e.id); setModal(false); } },
     ]);
   };
+  // Prefill the Kaiser-specific weekly template (only on tap). If shifts already
+  // exist, confirm first since it replaces the whole template.
+  const loadKaiser = () => {
+    if (data.shifts.length === 0) { loadSampleShifts(); return; }
+    Alert.alert(
+      'Load Kaiser template',
+      'Replace the current weekly template with the Kaiser preset (A/NSY, P/NSY, NY/EV, NYY1, NYY2 every day)?',
+      [{ text: 'Cancel', style: 'cancel' }, { text: 'Replace', style: 'destructive', onPress: loadSampleShifts }],
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -225,8 +235,8 @@ export default function ShiftsScreen() {
 
         {data.shifts.length === 0 ? (
           <View style={styles.emptyBox}>
-            <Text style={styles.emptyHint}>No shifts yet — tap any day above to add one, or load a sample week to explore.</Text>
-            <Button title="Load sample week" variant="secondary" onPress={loadSampleShifts} style={{ marginTop: 12 }} />
+            <Text style={styles.emptyHint}>No shifts yet — tap any day above to add one, or load the Kaiser template to start.</Text>
+            <Button title="Load Kaiser template" variant="secondary" onPress={loadKaiser} style={{ marginTop: 12 }} />
           </View>
         ) : (
           <>
@@ -235,7 +245,7 @@ export default function ShiftsScreen() {
               <Pressable key={s.id} onPress={() => openEdit(s)} style={styles.listRow}>
                 <View style={[styles.dot, { backgroundColor: s.color }]} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.listLabel}>{s.label} · ×{s.headcount}</Text>
+                  <Text style={styles.listLabel}>{s.label}{s.headcount > 1 ? ` · ×${s.headcount}` : ''}</Text>
                   <Text style={styles.listMeta}>
                     {offsetLabel(s.startMin, wsMin)} → {offsetLabel(s.endMin, wsMin)} · {durationLabel(shiftDurationMin(s))}
                   </Text>
@@ -246,6 +256,7 @@ export default function ShiftsScreen() {
             <Text style={styles.totals}>
               {data.shifts.length} shifts · {Math.round(totalWeeklyHours)} staffed hours per week
             </Text>
+            <Button title="Load Kaiser template" variant="secondary" onPress={loadKaiser} style={{ marginTop: 14 }} />
           </>
         )}
       </ScrollView>
