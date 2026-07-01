@@ -103,7 +103,7 @@ const styles = StyleSheet.create({
   name: { fontSize: theme.font.h3, fontWeight: '700', color: theme.colors.text },
   meta: { fontSize: theme.font.small, color: theme.colors.textSubtle, marginTop: 2 },
   email: { fontSize: theme.font.small, color: theme.colors.primary, marginTop: 2 },
-  emailIcon: { fontSize: theme.font.body },
+  emailIcon: { fontSize: 11 },
   remove: { color: theme.colors.textSubtle, fontSize: 18, fontWeight: '600', paddingHorizontal: 4 },
   hint: { textAlign: 'center', color: theme.colors.textSubtle, fontSize: theme.font.small, marginTop: 12 },
   modalWrap: { flex: 1, justifyContent: 'flex-end' },
