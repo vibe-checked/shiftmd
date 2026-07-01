@@ -57,7 +57,7 @@ export default function PhysiciansScreen() {
                 <Avatar name={p.name} color={p.color} />
                 <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={styles.name}>{p.name}</Text>
-                  {p.email ? <Text style={styles.email}>✉︎ {p.email}</Text> : <Text style={styles.meta}>Tap to add email</Text>}
+                  {p.email ? <Text style={styles.email}><Text style={styles.emailIcon}>✉️</Text>  {p.email}</Text> : <Text style={styles.meta}>Tap to add email</Text>}
                 </View>
                 <Pressable hitSlop={10} onPress={() => confirmRemove(p)} style={{ marginLeft: 10 }}>
                   <Text style={styles.remove}>✕</Text>
@@ -103,6 +103,7 @@ const styles = StyleSheet.create({
   name: { fontSize: theme.font.h3, fontWeight: '700', color: theme.colors.text },
   meta: { fontSize: theme.font.small, color: theme.colors.textSubtle, marginTop: 2 },
   email: { fontSize: theme.font.small, color: theme.colors.primary, marginTop: 2 },
+  emailIcon: { fontSize: theme.font.body },
   remove: { color: theme.colors.textSubtle, fontSize: 18, fontWeight: '600', paddingHorizontal: 4 },
   hint: { textAlign: 'center', color: theme.colors.textSubtle, fontSize: theme.font.small, marginTop: 12 },
   modalWrap: { flex: 1, justifyContent: 'flex-end' },
