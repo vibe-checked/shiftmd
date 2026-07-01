@@ -200,7 +200,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   // Populate ONLY the roster (10 physicians); leaves shifts/rules untouched.
   const loadSampleRoster = useCallback(() => {
-    const names = ['Dr. Adler', 'Dr. Bello', 'Dr. Chen', 'Dr. Davies', 'Dr. Vargas', 'Dr. Farooq', 'Dr. Gupta', 'Dr. Haddad', 'Dr. Ibrahim', 'Dr. Jensen'];
+    const names = ['Sarah Adler', 'Marco Bello', 'Lucy Chen', 'James Davies', 'Elena Vargas', 'Omar Farooq', 'Priya Gupta', 'Nadia Haddad', 'Yusuf Ibrahim', 'Erik Jensen'];
     setData((d) => ({
       ...d,
       physicians: names.map((name, i) => ({ id: uid('md'), name, color: PHYSICIAN_COLORS[i % PHYSICIAN_COLORS.length] })),
