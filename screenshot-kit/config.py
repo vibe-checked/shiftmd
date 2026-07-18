@@ -19,6 +19,7 @@ HERO_SHOT = "schedule.png"
 HERO_SW   = 1125
 HERO_TILT = -20
 HERO_PX   = 1050
+HERO_SPILL = 120                        # spill hero phone across 02->03 (continuous device)
 BULLETS = [
     "Auto-builds the whole month",
     "Never breaks a rule",
